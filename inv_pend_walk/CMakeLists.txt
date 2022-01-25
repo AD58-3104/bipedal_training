@@ -10,7 +10,7 @@ set(WEBOTS_LIBRARY_DIR ${WEBOTS_HOME}/lib/controller)
 set(WEBOTS_INCLUDE_DIRS ${WEBOTS_HOME}/include/controller/c ${WEBOTS_HOME}/include/controller/cpp)
 find_package(Eigen3 REQUIRED)
 
-file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/show.plt DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/show.plt ${CMAKE_CURRENT_SOURCE_DIR}/spline.plt DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 add_executable(main main.cpp)
 add_executable(check_plan test/check_foot_step_planner.cpp)
 add_executable(check_interface test/check_motor_interface.cpp)
