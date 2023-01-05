@@ -1,6 +1,6 @@
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
-
+#include "OsqpEigen/OsqpEigen.h"
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -39,7 +39,8 @@ void solve_qp()
     static constexpr double hCoM = 0.8;
     static constexpr double g = 9.81;
     static constexpr double T = 0.005;
-    static constexpr int32_t N = 10; // horizon length
+    static constexpr int32_t Horizon_length = 10; // horizon length
+    static constexpr int32_t N = Horizon_length; // horizon length
     Eigen::Matrix<double, 3, 3> A;
     Eigen::Matrix<double, 3, 1> B;
     Eigen::Matrix<double, 1, 3> C;
@@ -51,13 +52,13 @@ void solve_qp()
     Eigen::Matrix<double, N, 1> q_vec; // 重み asDiagonal()で対角になってくれるのでベクトル
     Eigen::Matrix<double, N, 1> r_vec; // 重み asDiagonal()で対角になってくれるのでベクトル
     Eigen::Matrix<double, N, N> hessian;
-    Eigen::Matrix<double, N, N> gradient;
-    Eigen::Matrix<double, N, N> Q;
+    Eigen::Matrix<double, 1, N> gradient;
     Eigen::Matrix<double, N, N> R;
-    q_vec << 1, 1, 1, 0.3, 1, 0.5, 0.4, 0.3, 0.2, 0.1;
-    r_vec << 1, 0.9, 0.8, 0.3, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1;
-    Q = q_vec.asDiagonal();
-    R = r_vec.asDiagonal();
+    Eigen::Matrix<double, N, N> Q;
+    R.setZero();
+    Q.setZero();
+    Q.diagonal() << 1, 1, 1, 0.3, 1, 0.5, 0.4, 0.3, 0.2, 0.1;
+    R.diagonal() << 1, 0.9, 0.8, 0.3, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1;
     std::cout << "\n--- Q ---" << std::endl;
     std::cout << Q;
     std::cout << "\n--- R ---" << std::endl;
@@ -102,7 +103,25 @@ void solve_qp()
     Eigen::Matrix<double, N, N> H = 1.0f / 2.0f * (Pu.transpose() * Q * Pu + R);
     hessian = 2.0f * H;
     std::cout << hessian << std::endl;
-    // gradient = H * u + ((x_k.transpose() * Px.transpose() - Z_ref.transpose())*Q*Pu);
+    gradient = ((x_k.transpose() * Px.transpose() - Z_ref.transpose())*Q*Pu);
+    // gradient = ((x_k.transpose() * Px.transpose() - Z_ref.transpose())*Q*Pu);
     std::cout << std::endl;
+
+
+    // osqp-eigenのサンプル
+    OsqpEigen::Solver solver;
+    solver.settings()->setWarmStart(true);
+    solver.data()->setNumberOfVariables(Horizon_length);
+    solver.data()->setNumberOfConstraints(Horizon_length * 2);
+    if (!solver.data()->setHessianMatrix(hessian))
+        return ;
+    if (!solver.data()->setGradient(gradient))
+        return ;
+    // if (!solver.data()->setLinearConstraintsMatrix(linearMatrix))
+    //     return ;
+    // if (!solver.data()->setLowerBound(lowerBound))
+    //     return ;
+    // if (!solver.data()->setUpperBound(upperBound))
+        // return ;
     return;
 }
