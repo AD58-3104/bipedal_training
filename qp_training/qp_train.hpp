@@ -54,11 +54,14 @@ void solve_qp()
     Eigen::Matrix<double, N, N> gradient;
     Eigen::Matrix<double, N, N> Q;
     Eigen::Matrix<double, N, N> R;
+    q_vec << 1, 1, 1, 0.3, 1, 0.5, 0.4, 0.3, 0.2, 0.1;
+    r_vec << 1, 0.9, 0.8, 0.3, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1;
     Q = q_vec.asDiagonal();
     R = r_vec.asDiagonal();
-    q_vec << 1, 1, 1, 1, 1, 1, 1, 1, 1, 1;
-    r_vec << 1, 1, 1, 1, 1, 1, 1, 1, 1, 1;
-
+    std::cout << "\n--- Q ---" << std::endl;
+    std::cout << Q;
+    std::cout << "\n--- R ---" << std::endl;
+    std::cout << R;
     A << 1, T, T * T / 2,
         0, 1, T,
         0, 0, 1;
@@ -73,7 +76,7 @@ void solve_qp()
     {
         Px(n, 0) = 1, Px(n, 1) = T * (n + 1), Px(n, 2) = T * T * (n + 1) * (n + 1) - hCoM / g;
     }
-    std::cout << "---  Px  ---\n"
+    std::cout << "\n---  Px  ---\n"
               << Px << std::endl;
     for (size_t n_row = 0; n_row < N; n_row++)
     {
@@ -96,8 +99,8 @@ void solve_qp()
     std::cout << "---  Pu  ---\n"
               << Pu << std::endl;
 
-    Eigen::Matrix<double, N, N> H = 1 / 2 * (Pu.transpose() * Q * Pu + R);
-    hessian = 2 * H;
+    Eigen::Matrix<double, N, N> H = 1.0f / 2.0f * (Pu.transpose() * Q * Pu + R);
+    hessian = 2.0f * H;
     std::cout << hessian << std::endl;
     // gradient = H * u + ((x_k.transpose() * Px.transpose() - Z_ref.transpose())*Q*Pu);
     std::cout << std::endl;
