@@ -92,6 +92,7 @@ namespace trajectory_free_LMPC
         {
             tmp_constraintMat.block(i * X_SIZE, i * X_SIZE, X_SIZE, X_SIZE) = -Eigen::MatrixXd::Identity(X_SIZE, X_SIZE);
             tmp_constraintMat.block((i + Hp) * X_SIZE, i * X_SIZE, X_SIZE, X_SIZE) = Eigen::MatrixXd::Identity(X_SIZE, X_SIZE);
+            tmp_constraintMat.block((Hp) * X_SIZE * 2 + i * U_SIZE, Hp * X_SIZE + i * U_SIZE, U_SIZE, U_SIZE) = Eigen::MatrixXd::Identity(U_SIZE, U_SIZE);
             if (i > 0)
             {
                 tmp_constraintMat.block((i) * X_SIZE, (i-1) * X_SIZE, X_SIZE, X_SIZE) = A;
