@@ -6,6 +6,7 @@
 #include <vector>
 #include <cmath>
 #include "gnuplot.h"
+#include <cxxabi.h>
 
 using namespace Eigen;
 
@@ -50,6 +51,13 @@ void sparseDisplay(Eigen::SparseMatrix<double> matrix)
     gp.sendLine("plot 'sparse_data.dat' using 1:2");
 }
 
+template <typename T>
+void showTypeName(T &&tp)
+{
+    int tmp = 0;
+    std::cout << abi::__cxa_demangle(typeid(decltype(std::forward<T>(tp))).name(), 0, 0, &tmp) << std::endl;
+}
+
 namespace trajectory_free_LMPC
 {
 
@@ -79,9 +87,10 @@ namespace trajectory_free_LMPC
     void getConstraintMatrix(const Eigen::Matrix<double, X_SIZE, X_SIZE> &A, const Eigen::Matrix<double, X_SIZE, U_SIZE> &B, Eigen::SparseMatrix<double> &constraintMatrix)
     {
         // QPのxの大きさ、システムの状態の方のxではない。
-        const size_t size_of_vector_x_in_QP = X_SIZE * (Hp + 1) + U_SIZE * Hp;
+        static constexpr size_t size_of_vector_x_in_QP = X_SIZE * (Hp + 1) + U_SIZE * Hp;
+        using constraintMat_t = Eigen::Matrix<double, X_SIZE *(Hp + 1) * 2 + U_SIZE * Hp, size_of_vector_x_in_QP>;
         // こんな事をしたらsparseを使う意味が無くなるが、面倒なので...。
-        Eigen::Matrix<double, X_SIZE *(Hp + 1) * 2 + U_SIZE * Hp, size_of_vector_x_in_QP> tmp_constraintMat = Eigen::MatrixXd::Zero(X_SIZE * (Hp + 1) * 2 + U_SIZE * Hp, size_of_vector_x_in_QP);
+        Eigen::MatrixXd tmp_constraintMat = Eigen::MatrixXd::Zero(X_SIZE * (Hp + 1) * 2 + U_SIZE * Hp, size_of_vector_x_in_QP);
         constraintMatrix.resize(X_SIZE * (Hp + 1) * 2 + U_SIZE * Hp, size_of_vector_x_in_QP);
         // 　↑の1つめの　X_SIZE * (Horizon_length + 1) = QPのxの中に状態を持たせる為に使う変数の分。 x0を不等式制約とし、
         //                                         そのx0を使ってそれ以降のダイナミクスを順々に計算し、それを = 0の制約とすると、
@@ -150,14 +159,24 @@ namespace trajectory_free_LMPC
 
     // todo sparseを返す様にするべき
     template <size_t VAL_NUM, size_t TOTAL_U_SIZE>
-    Eigen::Matrix<double, VAL_NUM, VAL_NUM> expandHessianSize(const Eigen::Matrix<double, TOTAL_U_SIZE, TOTAL_U_SIZE> &hessian)
+    // Eigen::Matrix<double, VAL_NUM, VAL_NUM> expandHessianSize(const Eigen::Matrix<double, TOTAL_U_SIZE, TOTAL_U_SIZE> &hessian)
+    Eigen::SparseMatrix<double> expandHessianSize(const Eigen::MatrixXd &hessian)
     {
         const size_t original_hessian_location = VAL_NUM - TOTAL_U_SIZE;
-        Eigen::MatrixXd expand_hessian = Eigen::MatrixXd::Zero(VAL_NUM, VAL_NUM);
-        expand_hessian.block(original_hessian_location, original_hessian_location, hessian.cols(), hessian.rows()) = hessian;
+        Eigen::SparseMatrix<double> expand_hessian;
+        expand_hessian.resize(VAL_NUM, VAL_NUM);
+        std::cout << "get hessian" << std::endl;
+        for (size_t i = 0; i < hessian.cols(); ++i)
+        {
+            Eigen::Matrix<double,VAL_NUM,1> tmp;
+            tmp << Eigen::VectorXd::Zero(original_hessian_location), hessian.col(i);
+            expand_hessian.col(original_hessian_location + i) = tmp.sparseView();
+        }
+        // Eigen::MatrixXd expand_hessian = Eigen::MatrixXd::Zero(VAL_NUM, VAL_NUM);
+        // expand_hessian.block(original_hessian_location, original_hessian_location, hessian.cols(), hessian.rows()) = hessian;
 
-        std::cout << "!!! expand hessian !!!" << std::endl;
-        std::cout << expand_hessian << std::endl;
+        // std::cout << "!!! expand hessian !!!" << std::endl;
+        // std::cout << expand_hessian << std::endl;
         return expand_hessian;
     }
 
@@ -176,10 +195,10 @@ namespace trajectory_free_LMPC
      */
     void solve_qp()
     {
-        static constexpr double hCoM = 0.8;
+        static constexpr double hCoM = 0.6;
         static constexpr double g = 9.81;
         static constexpr double T = 0.005;
-        static constexpr int32_t Horizon_length = 10; // horizon length
+        static constexpr int32_t Horizon_length = 50; // horizon length
         static constexpr int32_t N = Horizon_length;  // horizon length
         static constexpr int32_t Mu = 1;
         static constexpr int32_t Nx = 3;
@@ -213,8 +232,10 @@ namespace trajectory_free_LMPC
         std::cout << " Q, R " << std::endl;
         Q.setZero();
         R.setZero();
-        Q.diagonal() << 1, 1, 1, 0.3, 1, 0.5, 0.4, 0.3, 0.2, 0.1;
-        R.diagonal() << 1, 0.9, 0.8, 0.3, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1;
+        // Q.diagonal() << 1, 1, 1, 0.3, 1, 0.5, 0.4, 0.3, 0.2, 0.1;
+        // R.diagonal() << 1, 0.9, 0.8, 0.3, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1;
+        Q = decltype(Q)::Identity() * 1;
+        R = decltype(R)::Identity() * 2;
 
         Eigen::SparseMatrix<double> hessian;
         Eigen::Matrix<double, 1, num_of_variables> gradient;
@@ -252,8 +273,7 @@ namespace trajectory_free_LMPC
         {
             Px(n, 0) = 1, Px(n, 1) = T * (n + 1), Px(n, 2) = T * T * (n + 1) * (n + 1) - hCoM / g;
         }
-        std::cout << "\n---  Px  ---\n"
-                  << Px << std::endl;
+        std::cout << "\n---  Px  ---\n"<< Px << std::endl;
         for (size_t n_row = 0; n_row < Horizon_length; n_row++)
         {
             for (size_t n_col = 0; n_col < Horizon_length; n_col++)
@@ -278,20 +298,25 @@ namespace trajectory_free_LMPC
         getConstraintMatrix<Nx, Mu, Horizon_length>(A, B, ConstraintMatrix);
         getConstraintVector<Nx, Mu, Horizon_length>(xMax, xMin, uMax, uMin, x_k, lowerBound, upperBound);
 
-        std::cout << "--- lowerBound ---" << std::endl;
-        std::cout << lowerBound << std::endl;
-        std::cout << "--- upperBound ---" << std::endl;
-        std::cout << upperBound << std::endl;
+        // std::cout << "--- lowerBound ---" << std::endl;
+        // std::cout << lowerBound << std::endl;
+        // std::cout << "--- upperBound ---" << std::endl;
+        // std::cout << upperBound << std::endl;
 
-        Eigen::Matrix<double, Horizon_length * Mu, Horizon_length *Mu> H = 1.0f / 2.0f * (Pu.transpose() * Q * Pu + R);
-        Eigen::Matrix<double, num_of_variables, num_of_variables> expand_H = expandHessianSize<num_of_variables, Horizon_length * Mu>(H);
-        hessian = (2.0f * expand_H).sparseView();
+        // Eigen::Matrix<double, Horizon_length * Mu, Horizon_length *Mu> H = 1.0f / 2.0f * (Pu.transpose() * Q * Pu + R);
+        Eigen::MatrixXd H = Eigen::MatrixXd::Zero(Horizon_length * Mu, Horizon_length *Mu);
+        H = 1.0f / 2.0f * (Pu.transpose() * Q * Pu + R);
+        std::cout << "--- H ---" << std::endl;
+        std::cout << H << std::endl;
+        // Eigen::Matrix<double, num_of_variables, num_of_variables> expand_H = expandHessianSize<num_of_variables, Horizon_length * Mu>(H);
+        hessian = 2 * expandHessianSize<num_of_variables, Horizon_length * Mu>(H);
+        // hessian = (2.0f * expand_H).sparseView();
         sparseDisplay(hessian);
         Eigen::Matrix<double, 1, Horizon_length * Mu> original_G;
         original_G = ((x_k.transpose() * Px.transpose() - Z_ref.transpose()) * Q * Pu);
         gradient = expandGradientSize<num_of_variables, Horizon_length * Mu>(original_G);
-        std::cout << "--- gradient ---\n";
-        std::cout << gradient << std::endl;
+        // std::cout << "--- gradient ---\n";
+        // std::cout << gradient << std::endl;
 
         OsqpEigen::Solver solver;
         solver.settings()->setWarmStart(true);
@@ -320,7 +345,9 @@ namespace trajectory_free_LMPC
         Eigen::VectorXd QPSolution;
         int numberOfSteps = 50;
 
-        std::vector<double> calculated_u_list;
+        std::vector<double> calculated_x_list;
+        std::fstream ofs;
+        ofs.open("x_data.dat", std::ios::out);
         for (int i = 0; i < numberOfSteps; i++)
         {
 
@@ -337,6 +364,7 @@ namespace trajectory_free_LMPC
 
             // save data into file
             auto x0Data = x_k.data();
+            ofs << x_k(0, 0) << std::endl;
 
             // propagate the model
             x_k = A * x_k + B * ctr;
