@@ -10,45 +10,28 @@
 
 using namespace Eigen;
 
-void solve()
-{
-    float T = 0.01;
-    Eigen::Matrix<float, 3, 3> A, ansA;
-    Eigen::Matrix<float, 3, 1> B, ansB;
-    A << 1, T, T * T / 2,
-        0, 1, T,
-        0, 0, 1;
-    B << T * T * T / 6,
-        T * T / 2,
-        T;
-    ansA = A;
-    ansB = B;
-    for (size_t i = 0; i <= 10; i++)
-    {
-        ansA = ansA * A;
-        ansB = A * ansB;
-    }
-    std::cout << ansA << std::endl;
-    std::cout << ansB << std::endl;
-}
+static constexpr bool enable_sparse_display = false;
 
 void sparseDisplay(Eigen::SparseMatrix<double> matrix)
 {
-    GnuplotPipe gp;
-    std::fstream ofs;
-    ofs.open("sparse_data.dat", std::ios::out);
-    size_t row = matrix.rows();
-    size_t col = matrix.cols();
-    for (int k = 0; k < matrix.outerSize(); ++k)
-        for (SparseMatrix<double>::InnerIterator it(matrix, k); it; ++it)
-        {
-            ofs << it.col() << " " << -it.row() << "\n";
-        }
-    gp.sendLine("set terminal wxt size 1280,960");
-    // gp.sendLine("set terminal wxt size 640,480");
-    gp.sendLine("set xrange [-1:" + std::to_string(col) + "]");
-    gp.sendLine("set yrange [-" + std::to_string(row + 1) + ":1]");
-    gp.sendLine("plot 'sparse_data.dat' using 1:2");
+    if (enable_sparse_display)
+    {
+        GnuplotPipe gp;
+        std::fstream ofs;
+        ofs.open("sparse_data.dat", std::ios::out);
+        size_t row = matrix.rows();
+        size_t col = matrix.cols();
+        for (int k = 0; k < matrix.outerSize(); ++k)
+            for (SparseMatrix<double>::InnerIterator it(matrix, k); it; ++it)
+            {
+                ofs << it.col() << " " << -it.row() << "\n";
+            }
+        gp.sendLine("set terminal wxt size 1280,960");
+        // gp.sendLine("set terminal wxt size 640,480");
+        gp.sendLine("set xrange [-1:" + std::to_string(col) + "]");
+        gp.sendLine("set yrange [-" + std::to_string(row + 1) + ":1]");
+        gp.sendLine("plot 'sparse_data.dat' using 1:2");
+    }
 }
 
 template <typename T>
@@ -58,27 +41,38 @@ void showTypeName(T &&tp)
     std::cout << abi::__cxa_demangle(typeid(decltype(std::forward<T>(tp))).name(), 0, 0, &tmp) << std::endl;
 }
 
+void showResult()
+{
+    GnuplotPipe gp;
+    gp.sendLine("set terminal wxt size 1280,960");
+    gp.sendLine("set xrange [0:3]");
+    gp.sendLine("set yrange [-0.5:0.5]");
+    gp.sendLine("plot 'x_data.dat' using 1:2");
+}
+
 namespace trajectory_free_LMPC
 {
 
-    /**
-     * @brief
-     *
-     * @param step 現在のステップ
-     * @param horizon_length ホライゾンの長さ
-     * @return std::vector<double>
-     */
-    std::vector<double> generateRefTrajectory(const uint32_t &step, const uint32_t &horizon_length)
+    Eigen::VectorXd generateRefTrajectory(const uint32_t &step, const uint32_t &horizon_length)
     {
-        constexpr double step_T = 1.5f; // 秒に一歩
-        static constexpr double T = 0.005;
-        constexpr uint32_t loop_len = std::round(step_T / T);
-        constexpr double rad = 2.0f * M_PI / (double)loop_len;
-        std::vector<double> ret;
-        ret.reserve(horizon_length);
+        static constexpr double T = 0.01;              // サンプリング周期 (s)
+        static constexpr uint_fast64_t start_step = 30;  // 30 * T = 0.3秒後に歩き出す
+        static constexpr uint_fast64_t cycle_step = 40; // 何サイクル毎に足踏みするか、 cycle_step * T = 周期(s)
+        static constexpr double step_length = 0.3;     // (m)
+        Eigen::VectorXd ret = Eigen::VectorXd::Zero(horizon_length);
         for (uint32_t i = 0; i < horizon_length; i++)
         {
-            ret.push_back(rad * static_cast<double>(step + i));
+            if ((step + i) > start_step)
+            {
+                if ((step + i) % cycle_step == 0)
+                {
+                    ret(i, 0) = step_length;
+                }
+                else
+                {
+                    ret(i, 0) = -step_length;
+                }
+            }
         }
         return ret;
     }
@@ -121,7 +115,6 @@ namespace trajectory_free_LMPC
                              const Eigen::Matrix<double, U_SIZE, 1> &uMax, const Eigen::Matrix<double, U_SIZE, 1> &uMin,
                              const Eigen::Matrix<double, X_SIZE, 1> &x0, Eigen::VectorXd &lowerBound, Eigen::VectorXd &upperBound)
     {
-        std::cout << "0 clear!\n";
         Eigen::VectorXd lowerInequality = Eigen::MatrixXd::Zero(X_SIZE * (Hp + 1) + U_SIZE * Hp, 1);
         Eigen::VectorXd upperInequality = Eigen::MatrixXd::Zero(X_SIZE * (Hp + 1) + U_SIZE * Hp, 1);
         for (int i = 0; i < Hp + 1; i++)
@@ -129,18 +122,15 @@ namespace trajectory_free_LMPC
             lowerInequality.block(X_SIZE * i, 0, X_SIZE, 1) = xMin;
             upperInequality.block(X_SIZE * i, 0, X_SIZE, 1) = xMax;
         }
-        std::cout << "1 clear!\n";
         for (int i = 0; i < Hp; i++)
         {
             lowerInequality.block(U_SIZE * i + X_SIZE * (Hp + 1), 0, U_SIZE, 1) = uMin;
             upperInequality.block(U_SIZE * i + X_SIZE * (Hp + 1), 0, U_SIZE, 1) = uMax;
         }
-        std::cout << "2 clear!\n";
         Eigen::VectorXd lowerEquality = Eigen::MatrixXd::Zero(X_SIZE * (Hp + 1), 1);
         lowerEquality.block(0, 0, X_SIZE, 1) = -x0;
         Eigen::VectorXd upperEquality = Eigen::MatrixXd::Zero(X_SIZE * (Hp + 1), 1);
         upperEquality = lowerEquality;
-        std::cout << "3 clear!\n";
         lowerBound = upperBound = Eigen::MatrixXd::Zero(lowerEquality.rows() + lowerInequality.rows(), 1);
         lowerBound
             << lowerEquality,
@@ -165,10 +155,9 @@ namespace trajectory_free_LMPC
         const size_t original_hessian_location = VAL_NUM - TOTAL_U_SIZE;
         Eigen::SparseMatrix<double> expand_hessian;
         expand_hessian.resize(VAL_NUM, VAL_NUM);
-        std::cout << "get hessian" << std::endl;
         for (size_t i = 0; i < hessian.cols(); ++i)
         {
-            Eigen::Matrix<double,VAL_NUM,1> tmp;
+            Eigen::Matrix<double, VAL_NUM, 1> tmp;
             tmp << Eigen::VectorXd::Zero(original_hessian_location), hessian.col(i);
             expand_hessian.col(original_hessian_location + i) = tmp.sparseView();
         }
@@ -197,9 +186,9 @@ namespace trajectory_free_LMPC
     {
         static constexpr double hCoM = 0.6;
         static constexpr double g = 9.81;
-        static constexpr double T = 0.005;
-        static constexpr int32_t Horizon_length = 50; // horizon length
-        static constexpr int32_t N = Horizon_length;  // horizon length
+        static constexpr double T = 0.01;
+        static constexpr int32_t Horizon_length = 100; // horizon length
+        static constexpr int32_t N = Horizon_length;   // horizon length
         static constexpr int32_t Mu = 1;
         static constexpr int32_t Nx = 3;
         static constexpr int32_t Zx = 1;
@@ -234,8 +223,8 @@ namespace trajectory_free_LMPC
         R.setZero();
         // Q.diagonal() << 1, 1, 1, 0.3, 1, 0.5, 0.4, 0.3, 0.2, 0.1;
         // R.diagonal() << 1, 0.9, 0.8, 0.3, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1;
-        Q = decltype(Q)::Identity() * 1;
-        R = decltype(R)::Identity() * 2;
+        Q = decltype(Q)::Identity() * 100.0f;
+        R = decltype(R)::Identity() * 1.0f;
 
         Eigen::SparseMatrix<double> hessian;
         Eigen::Matrix<double, 1, num_of_variables> gradient;
@@ -246,8 +235,8 @@ namespace trajectory_free_LMPC
 
         static constexpr double umax = 0.4;
         static constexpr double umin = -0.4;
-        static constexpr double zmax = 1;
-        static constexpr double zmin = -1;
+        static constexpr double zmax = 1.0;
+        static constexpr double zmin = -1.0;
 
         Eigen::Matrix<double, Nx, 1> xMax = Eigen::MatrixXd::Constant(Nx, 1, zmax);
         Eigen::Matrix<double, Nx, 1> xMin = Eigen::MatrixXd::Constant(Nx, 1, zmin);
@@ -259,13 +248,13 @@ namespace trajectory_free_LMPC
         std::cout << Q;
         std::cout << "\n--- R ---" << std::endl;
         std::cout << R;
-        A << 1, T, T * T / 2,
-            0, 1, T,
-            0, 0, 1;
-        B << T * T * T / 6,
-            T * T / 2,
+        A << 1.0f, T, T * T / 2.0f,
+            0, 1.0f, T,
+            0, 0, 1.0f;
+        B << T * T * T / 6.0f,
+            T * T / 2.0f,
             T;
-        C << 1, 0, hCoM / g;
+        C << 1.0f, 0, hCoM / g;
 
         x_k << 0, 0, 0; // 一番最初の状態で初期化
         // construct Px
@@ -273,7 +262,8 @@ namespace trajectory_free_LMPC
         {
             Px(n, 0) = 1, Px(n, 1) = T * (n + 1), Px(n, 2) = T * T * (n + 1) * (n + 1) - hCoM / g;
         }
-        std::cout << "\n---  Px  ---\n"<< Px << std::endl;
+        std::cout << "\n---  Px  ---\n"
+                  << Px << std::endl;
         for (size_t n_row = 0; n_row < Horizon_length; n_row++)
         {
             for (size_t n_col = 0; n_col < Horizon_length; n_col++)
@@ -304,7 +294,7 @@ namespace trajectory_free_LMPC
         // std::cout << upperBound << std::endl;
 
         // Eigen::Matrix<double, Horizon_length * Mu, Horizon_length *Mu> H = 1.0f / 2.0f * (Pu.transpose() * Q * Pu + R);
-        Eigen::MatrixXd H = Eigen::MatrixXd::Zero(Horizon_length * Mu, Horizon_length *Mu);
+        Eigen::MatrixXd H = Eigen::MatrixXd::Zero(Horizon_length * Mu, Horizon_length * Mu);
         H = 1.0f / 2.0f * (Pu.transpose() * Q * Pu + R);
         std::cout << "--- H ---" << std::endl;
         std::cout << H << std::endl;
@@ -343,11 +333,21 @@ namespace trajectory_free_LMPC
 
         Eigen::Matrix<double, Mu, 1> ctr;
         Eigen::VectorXd QPSolution;
-        int numberOfSteps = 50;
+        int numberOfSteps = 300;
 
         std::vector<double> calculated_x_list;
-        std::fstream ofs;
-        ofs.open("x_data.dat", std::ios::out);
+        std::ofstream ofs;
+        ofs.open("x_data.dat");
+        auto updateGradient = [&](int current_step)->void
+        {
+            Z_ref = generateRefTrajectory(current_step,Horizon_length);
+            original_G = ((x_k.transpose() * Px.transpose() - Z_ref.transpose()) * Q * Pu);
+            gradient = expandGradientSize<num_of_variables, Horizon_length * Mu>(original_G);
+            if (!solver.data()->setGradient(gradient)){
+                throw std::runtime_error(" some false in setGradient");
+                return;
+            }
+        };
         for (int i = 0; i < numberOfSteps; i++)
         {
 
@@ -360,15 +360,15 @@ namespace trajectory_free_LMPC
 
             // get the controller input
             QPSolution = solver.getSolution();
-            ctr = QPSolution.block(12 * (Horizon_length + 1), 0, 4, 1);
+            ctr = QPSolution.block(Nx * (Horizon_length + 1), 0, Mu, 1);
 
             // save data into file
             auto x0Data = x_k.data();
-            ofs << x_k(0, 0) << std::endl;
+            ofs << i * T << " " << x_k(0, 0) << std::endl;
 
             // propagate the model
             x_k = A * x_k + B * ctr;
-
+            updateGradient(i);
             // update the constraint bound
             updateConstraintVectors<Nx>(x_k, lowerBound, upperBound);
             if (!solver.updateBounds(lowerBound, upperBound))
@@ -382,6 +382,10 @@ namespace trajectory_free_LMPC
                           << ctr << std::endl;
             }
         }
+        showResult();
+        std::cout << lowerBound.transpose() << std::endl;
+        std::cout << "--- Pu =---" << std::endl;
+        std::cout << Pu << std::endl;
         return;
     }
 }
