@@ -76,8 +76,10 @@ void showResult()
     gp.sendLine("set terminal wxt size 1280,960");
     gp.sendLine("set xrange [0:3]");
     gp.sendLine("set yrange [-0.5:0.5]");
-    gp.sendLine("plot 'x_data.dat' using 1:2");
+    gp.sendLine("plot 'x_data.dat' using 1:2 w lp");
     gp.sendLine("replot 'x_data.dat' using 1:3 w lp");
+    gp.sendLine("replot 'x_data.dat' using 1:4 w lp");
+    gp.sendLine("replot 'x_data.dat' using 1:5 w lp");
 }
 
 Eigen::VectorXd generateRefTrajectory(const int32_t &step, const int32_t &horizon_length)
