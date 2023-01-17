@@ -16,7 +16,7 @@
 #include "gnuplot.h"
 #include <cxxabi.h>
 
-static constexpr bool enable_sparse_display = false;
+static constexpr bool enable_sparse_display = true;
 using namespace Eigen;
 
 void sparseDisplay(Eigen::SparseMatrix<double> matrix)
@@ -58,7 +58,7 @@ void sparseBlockAssignation(Eigen::SparseMatrix<T> &sparse_mat, const size_t &ro
         for (size_t col = col_location; col < col_location + assign_col; col++)
         {
             assert((sparse_max_col >= assign_col + col_location) || (sparse_max_row >= assign_row + row_location)); // over sparse size
-            sparse_mat.insert(row, col) = assign_mat(row - row_location, col - col_location);
+            sparse_mat.coeffRef(row, col) = assign_mat(row - row_location, col - col_location);
         }
     }
 }
@@ -108,7 +108,7 @@ void castMPCToQPHessian(const Eigen::DiagonalMatrix<double, (Z_SIZE * mpcWindow 
                         Eigen::Matrix<double, Z_SIZE, X_SIZE> &C, Eigen::SparseMatrix<double> &hessianMatrix)
 {
 
-    hessianMatrix.resize(X_SIZE * (mpcWindow + 1) + U_SIZE * mpcWindow, X_SIZE * (mpcWindow + 1) + U_SIZE * mpcWindow);
+    hessianMatrix.resize(X_SIZE * (mpcWindow + 1) + Z_SIZE * (mpcWindow + 1) + U_SIZE * mpcWindow, X_SIZE * (mpcWindow + 1) + U_SIZE * mpcWindow);
 
     // populate hessian matrix
     for (int i = 0; i < X_SIZE * (mpcWindow + 1) + U_SIZE * mpcWindow; i++)
@@ -131,8 +131,8 @@ void castMPCToQPHessian(const Eigen::DiagonalMatrix<double, (Z_SIZE * mpcWindow 
                 hessianMatrix.insert(i, i) = value;
         }
     }
-    std::cout << hessianMatrix << std::endl;
-    sparseDisplay(hessianMatrix);
+    // std::cout << hessianMatrix << std::endl;
+    // sparseDisplay(hessianMatrix);
 }
 
 // todo xRefの形変える
@@ -196,17 +196,20 @@ void castMPCToQPConstraintMatrix(const Eigen::Matrix<double, X_SIZE, X_SIZE> &dy
 
     // zの不等式制約のCを代入
     // for (int i = (mpcWindow + 1) * X_SIZE; i < (X_SIZE * (mpcWindow + 1)) + Z_SIZE * (mpcWindow + 1); i++)
-    for (int i = 0; i < Z_SIZE * (mpcWindow + 1); i++)
+    for (int i = 0; i < Z_SIZE * (mpcWindow + 1);++i)
     {
-        std::cout << "row " << (i * Z_SIZE + (mpcWindow + 1) * X_SIZE) << "col " << i << std::endl;
-        sparseBlockAssignation(constraintMatrix, (i * Z_SIZE + (mpcWindow + 1) * X_SIZE), i, outputMatrix);
+        sparseBlockAssignation(constraintMatrix, (i * Z_SIZE + (mpcWindow + 1) * X_SIZE), i * X_SIZE, outputMatrix);
+        // std::cout << "row " << (i * Z_SIZE + (mpcWindow + 1) * X_SIZE) << "col " << i << std::endl;
+        // std::cout << constraintMatrix << std::endl;
     }
 
     // uの不等式制約のIを代入
-    for (int i = 0; i < X_SIZE * (mpcWindow + 1) + U_SIZE * mpcWindow; i++)
+    for (int i = X_SIZE * (mpcWindow + 1); i < X_SIZE * (mpcWindow + 1) + U_SIZE * mpcWindow; i++)
     {
-        constraintMatrix.insert(i + (mpcWindow + 1) * X_SIZE, i) = 1;
+        constraintMatrix.insert(i + Z_SIZE * (mpcWindow + 1), i) = 1;
+        // std::cout << constraintMatrix << std::endl;
     }
+    sparseDisplay(constraintMatrix);
 }
 
 // template <size_t X_SIZE, size_t U_SIZE, size_t Z_SIZE>
@@ -331,7 +334,8 @@ int main()
     castMPCToQPGradient<Nx, Mu, Zx, mpcWindow>(Q, zRef, C, gradient);
     // std::cout << gradient << std::endl;
     castMPCToQPConstraintMatrix<Nx, Mu, Zx, mpcWindow>(A, B, C, linearMatrix);
-    // castMPCToQPConstraintVectors(zMax, zMin, uMax, uMin, x0, mpcWindow, lowerBound, upperBound);
+    // std::cout << linearMatrix << std::endl;
+    castMPCToQPConstraintVectors(zMax, zMin, uMax, uMin, x0, mpcWindow, lowerBound, upperBound);
 
     // // instantiate the solver
     // OsqpEigen::Solver solver;
