@@ -108,7 +108,7 @@ void castMPCToQPHessian(const Eigen::DiagonalMatrix<double, (Z_SIZE * mpcWindow 
                         Eigen::Matrix<double, Z_SIZE, X_SIZE> &C, Eigen::SparseMatrix<double> &hessianMatrix)
 {
 
-    hessianMatrix.resize(X_SIZE * (mpcWindow + 1) + Z_SIZE * (mpcWindow + 1) + U_SIZE * mpcWindow, X_SIZE * (mpcWindow + 1) + U_SIZE * mpcWindow);
+    hessianMatrix.resize(X_SIZE * (mpcWindow + 1) + U_SIZE * mpcWindow, X_SIZE * (mpcWindow + 1) + U_SIZE * mpcWindow);
 
     // populate hessian matrix
     for (int i = 0; i < X_SIZE * (mpcWindow + 1) + U_SIZE * mpcWindow; i++)
@@ -131,7 +131,7 @@ void castMPCToQPHessian(const Eigen::DiagonalMatrix<double, (Z_SIZE * mpcWindow 
                 hessianMatrix.insert(i, i) = value;
         }
     }
-    // std::cout << hessianMatrix << std::endl;
+    std::cout << hessianMatrix << std::endl;
     // sparseDisplay(hessianMatrix);
 }
 
@@ -249,24 +249,24 @@ void castMPCToQPConstraintVectors(const Eigen::Matrix<double, Z_SIZE, 1> &zMax, 
         upperInequality;
 }
 
-// template<size_t X_SIZE>
-// void updateConstraintVectors(const Eigen::Matrix<double, X_SIZE, 1> &x0,
-//                              Eigen::VectorXd &lowerBound, Eigen::VectorXd &upperBound)
-// {
-//     lowerBound.block(0, 0, X_SIZE, 1) = -x0;
-//     upperBound.block(0, 0, X_SIZE, 1) = -x0;
-// }
+template <size_t X_SIZE>
+void updateConstraintVectors(const Eigen::Matrix<double, X_SIZE, 1> &x0,
+                             Eigen::VectorXd &lowerBound, Eigen::VectorXd &upperBound)
+{
+    lowerBound.block(0, 0, X_SIZE, 1) = -x0;
+    upperBound.block(0, 0, X_SIZE, 1) = -x0;
+}
 
-// template<size_t Z_SIZE>
-// double getErrorNorm(const Eigen::Matrix<double, Z_SIZE, 1> &z,
-//                     const Eigen::Matrix<double, Z_SIZE, 1> &zRef)
-// {
-//     // evaluate the error
-//     Eigen::Matrix<double, Z_SIZE, 1> error = z - zRef;
+template <size_t Z_SIZE>
+double getErrorNorm(const Eigen::Matrix<double, Z_SIZE, 1> &z,
+                    const Eigen::Matrix<double, Z_SIZE, 1> &zRef)
+{
+    // evaluate the error
+    Eigen::Matrix<double, Z_SIZE, 1> error = z - zRef;
 
-//     // return the norm
-//     return error.norm();
-// }
+    // return the norm
+    return error.norm();
+}
 
 int main()
 {
@@ -338,55 +338,60 @@ int main()
     castMPCToQPConstraintVectors<Nx, Mu, Zx, mpcWindow>(zMax, zMin, uMax, uMin, x0, lowerBound, upperBound);
 
     // // instantiate the solver
-    // OsqpEigen::Solver solver;
+    OsqpEigen::Solver solver;
 
-    // // settings
-    // // solver.settings()->setVerbosity(false);
-    // solver.settings()->setWarmStart(true);
+    // settings
+    // solver.settings()->setVerbosity(false);
+    solver.settings()->setWarmStart(true);
 
-    // // set the initial data of the QP solver
-    // solver.data()->setNumberOfVariables(12 * (mpcWindow + 1) + 4 * mpcWindow);
-    // solver.data()->setNumberOfConstraints(2 * 12 * (mpcWindow + 1) + 4 * mpcWindow);
-    // if (!solver.data()->setHessianMatrix(hessian))
-    //     return 1;
-    // if (!solver.data()->setGradient(gradient))
-    //     return 1;
-    // if (!solver.data()->setLinearConstraintsMatrix(linearMatrix))
-    //     return 1;
-    // if (!solver.data()->setLowerBound(lowerBound))
-    //     return 1;
-    // if (!solver.data()->setUpperBound(upperBound))
-    //     return 1;
+    // set the initial data of the QP solver
+    solver.data()->setNumberOfVariables(Nx * (mpcWindow + 1) + Mu * mpcWindow);
+    solver.data()->setNumberOfConstraints(Nx * (mpcWindow + 1) + Zx * (mpcWindow + 1) + Mu * mpcWindow);
+    if (!solver.data()->setHessianMatrix(hessian))
+        return 1;
+    if (!solver.data()->setGradient(gradient))
+        return 1;
+    if (!solver.data()->setLinearConstraintsMatrix(linearMatrix))
+        return 1;
+    if (!solver.data()->setLowerBound(lowerBound))
+        return 1;
+    if (!solver.data()->setUpperBound(upperBound))
+        return 1;
 
-    // // instantiate the solver
-    // if (!solver.initSolver())
-    //     return 1;
+    // instantiate the solver
+    if (!solver.initSolver())
+        return 1;
 
-    // // controller input and QPSolution vector
-    // Eigen::Vector4d ctr;
-    // Eigen::VectorXd QPSolution;
+    // controller input and QPSolution vector
+    Eigen::Matrix<double, Mu, 1> ctr;
+    Eigen::VectorXd QPSolution;
 
-    // for (int i = 0; i < numberOfSteps; i++)
-    // {
+    std::ofstream ofs;
+    ofs.open("x_data.dat");
+    for (int i = 0; i < numberOfSteps; i++)
+    {
 
-    //     // solve the QP problem
-    //     if (solver.solveProblem() != OsqpEigen::ErrorExitFlag::NoError)
-    //         return 1;
+        // solve the QP problem
+        if (solver.solveProblem() != OsqpEigen::ErrorExitFlag::NoError)
+            return 1;
 
-    //     // get the controller input
-    //     QPSolution = solver.getSolution();
-    //     ctr = QPSolution.block(Nx * (mpcWindow + 1), 0, Mu, 1);
+        // get the controller input
+        QPSolution = solver.getSolution();
+        ctr = QPSolution.block(Nx * (mpcWindow + 1), 0, Mu, 1);
+        // save data into file
+        auto x0Data = x0.data();
 
-    //     // save data into file
-    //     auto x0Data = x0.data();
+        // propagate the model
+        x0 = A * x0 + B * ctr;
+        ofs << i * T << " " << x0.transpose() << std::endl;
+        zRef = generateRefTrajectory(i, mpcWindow + 1);
+        castMPCToQPGradient<Nx, Mu, Zx, mpcWindow>(Q, zRef, C, gradient);
 
-    //     // propagate the model
-    //     x0 = A * x0 + B * ctr;
-
-    //     // update the constraint bound
-    //     updateConstraintVectors(x0, lowerBound, upperBound);
-    //     if (!solver.updateBounds(lowerBound, upperBound))
-    //         return 1;
-    // }
+        // update the constraint bound
+        updateConstraintVectors<Nx>(x0, lowerBound, upperBound);
+        if (!solver.updateBounds(lowerBound, upperBound))
+            return 1;
+    }
+    showResult();
     return 0;
 }
