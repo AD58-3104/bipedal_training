@@ -82,24 +82,24 @@ void showResult()
     gp.sendLine("replot 'x_data.dat' using 1:5 w lp");
 }
 
-Eigen::VectorXd generateRefTrajectory(const int32_t &step, const int32_t &horizon_length)
+Eigen::VectorXd generateRefTrajectory(const int32_t &step, const int32_t &horizon_length, const double &step_width)
 {
     static constexpr double T = 0.01;              // サンプリング周期 (s)
-    static constexpr int_fast64_t start_step = 2;  // 10 * T = 0.1秒後に歩き出す
+    static constexpr int_fast64_t start_step = 20; // 10 * T = 0.1秒後に歩き出す
     static constexpr int_fast64_t cycle_step = 40; // 何サイクル毎に足踏みするか、 cycle_step * T = 周期(s)
-    static constexpr double step_length = 0.3;     // 一歩の大きさ(m)
+    // static constexpr double step_width = 0.3;     // 一歩の大きさ(m)
     Eigen::VectorXd ret = Eigen::VectorXd::Zero(horizon_length);
     for (int32_t i = 0; i < horizon_length; i++)
     {
-        if ((step + i) > start_step)
+        if ((step + i) >= start_step)
         {
             if (((step + i) / cycle_step) % 2 == 0)
             {
-                ret(i, 0) = step_length;
+                ret(i, 0) = step_width;
             }
             else
             {
-                ret(i, 0) = -step_length;
+                ret(i, 0) = -step_width;
             }
         }
     }
