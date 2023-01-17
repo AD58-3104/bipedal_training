@@ -50,7 +50,8 @@ void sparseBlockAssignation(Eigen::SparseMatrix<T> &sparse_mat, const size_t &ro
     const size_t sparse_max_row = sparse_mat.rows();
     if ((sparse_max_col < assign_col + col_location) || (sparse_max_row < assign_row + row_location))
     {
-        throw std::range_error("write block will exceed sparse size!!!");
+        std::string msg = "write block will exceed sparse size!!!\n row " + std::to_string(assign_row + row_location) + " col " + std::to_string(assign_col + col_location);
+        throw std::range_error(msg);
     }
     for (size_t row = row_location; row < row_location + assign_row; row++)
     {
@@ -158,45 +159,55 @@ void castMPCToQPGradient(const Eigen::DiagonalMatrix<double, Z_SIZE * mpcWindow 
     // std::cout << "gradient\n"<< gradient << std::endl;
 }
 
-// template <size_t X_SIZE, size_t U_SIZE, size_t Z_SIZE>
-// void castMPCToQPConstraintMatrix(const Eigen::Matrix<double, X_SIZE, X_SIZE> &dynamicMatrix, const Eigen::Matrix<double, X_SIZE, U_SIZE> &controlMatrix,
-//                                  int mpcWindow, Eigen::SparseMatrix<double> &constraintMatrix)
-// {
-//     constraintMatrix.resize(X_SIZE * (mpcWindow + 1) + X_SIZE * (mpcWindow + 1) + U_SIZE * mpcWindow, X_SIZE * (mpcWindow + 1) + U_SIZE * mpcWindow);
+template <size_t X_SIZE, size_t U_SIZE, size_t Z_SIZE, size_t mpcWindow>
+void castMPCToQPConstraintMatrix(const Eigen::Matrix<double, X_SIZE, X_SIZE> &dynamicMatrix, const Eigen::Matrix<double, X_SIZE, U_SIZE> &controlMatrix,
+                                 const Eigen::Matrix<double, Z_SIZE, X_SIZE> &outputMatrix, Eigen::SparseMatrix<double> &constraintMatrix)
+{
+    constraintMatrix.resize(X_SIZE * (mpcWindow + 1) + Z_SIZE * (mpcWindow + 1) + U_SIZE * mpcWindow, X_SIZE * (mpcWindow + 1) + U_SIZE * mpcWindow);
 
-//     // populate linear constraint matrix
-//     for (int i = 0; i < X_SIZE * (mpcWindow + 1); i++)
-//     {
-//         constraintMatrix.insert(i, i) = -1;
-//     }
+    // populate linear constraint matrix
+    // 状態の所の-Iを代入
+    for (int i = 0; i < X_SIZE * (mpcWindow + 1); i++)
+    {
+        constraintMatrix.insert(i, i) = -1;
+    }
+    // 状態の所のAを代入
+    for (int i = 0; i < mpcWindow; i++)
+        for (int j = 0; j < X_SIZE; j++)
+            for (int k = 0; k < X_SIZE; k++)
+            {
+                float value = dynamicMatrix(j, k);
+                if (value != 0)
+                {
+                    constraintMatrix.insert(X_SIZE * (i + 1) + j, X_SIZE * i + k) = value;
+                }
+            }
+    // 状態の所のBを代入
+    for (int i = 0; i < mpcWindow; i++)
+        for (int j = 0; j < X_SIZE; j++)
+            for (int k = 0; k < U_SIZE; k++)
+            {
+                float value = controlMatrix(j, k);
+                if (value != 0)
+                {
+                    constraintMatrix.insert(X_SIZE * (i + 1) + j, U_SIZE * i + k + X_SIZE * (mpcWindow + 1)) = value;
+                }
+            }
 
-//     for (int i = 0; i < mpcWindow; i++)
-//         for (int j = 0; j < X_SIZE; j++)
-//             for (int k = 0; k < X_SIZE; k++)
-//             {
-//                 float value = dynamicMatrix(j, k);
-//                 if (value != 0)
-//                 {
-//                     constraintMatrix.insert(X_SIZE * (i + 1) + j, X_SIZE * i + k) = value;
-//                 }
-//             }
+    // zの不等式制約のCを代入
+    // for (int i = (mpcWindow + 1) * X_SIZE; i < (X_SIZE * (mpcWindow + 1)) + Z_SIZE * (mpcWindow + 1); i++)
+    for (int i = 0; i < Z_SIZE * (mpcWindow + 1); i++)
+    {
+        std::cout << "row " << (i * Z_SIZE + (mpcWindow + 1) * X_SIZE) << "col " << i << std::endl;
+        sparseBlockAssignation(constraintMatrix, (i * Z_SIZE + (mpcWindow + 1) * X_SIZE), i, outputMatrix);
+    }
 
-//     for (int i = 0; i < mpcWindow; i++)
-//         for (int j = 0; j < X_SIZE; j++)
-//             for (int k = 0; k < U_SIZE; k++)
-//             {
-//                 float value = controlMatrix(j, k);
-//                 if (value != 0)
-//                 {
-//                     constraintMatrix.insert(X_SIZE * (i + 1) + j, U_SIZE * i + k + X_SIZE * (mpcWindow + 1)) = value;
-//                 }
-//             }
-
-//     for (int i = 0; i < X_SIZE * (mpcWindow + 1) + U_SIZE * mpcWindow; i++)
-//     {
-//         constraintMatrix.insert(i + (mpcWindow + 1) * X_SIZE, i) = 1;
-//     }
-// }
+    // uの不等式制約のIを代入
+    for (int i = 0; i < X_SIZE * (mpcWindow + 1) + U_SIZE * mpcWindow; i++)
+    {
+        constraintMatrix.insert(i + (mpcWindow + 1) * X_SIZE, i) = 1;
+    }
+}
 
 // template <size_t X_SIZE, size_t U_SIZE, size_t Z_SIZE>
 // void castMPCToQPConstraintVectors(const Eigen::Matrix<double, Z_SIZE, 1> &zMax, const Eigen::Matrix<double, Z_SIZE, 1> &zMin,
@@ -319,7 +330,7 @@ int main()
     castMPCToQPHessian<Nx, Mu, Zx, mpcWindow>(Q, R, C, hessian);
     castMPCToQPGradient<Nx, Mu, Zx, mpcWindow>(Q, zRef, C, gradient);
     // std::cout << gradient << std::endl;
-    // castMPCToQPConstraintMatrix(A, B, mpcWindow, linearMatrix);
+    castMPCToQPConstraintMatrix<Nx, Mu, Zx, mpcWindow>(A, B, C, linearMatrix);
     // castMPCToQPConstraintVectors(zMax, zMin, uMax, uMin, x0, mpcWindow, lowerBound, upperBound);
 
     // // instantiate the solver
