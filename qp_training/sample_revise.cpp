@@ -42,6 +42,27 @@ void sparseDisplay(Eigen::SparseMatrix<double> matrix)
 }
 
 template <typename T>
+void sparseBlockAssignation(Eigen::SparseMatrix<T> &sparse_mat, const size_t &row_location, const size_t &col_location, const Eigen::MatrixXd &assign_mat)
+{
+    const size_t assign_row = assign_mat.rows();
+    const size_t assign_col = assign_mat.cols();
+    const size_t sparse_max_col = sparse_mat.cols();
+    const size_t sparse_max_row = sparse_mat.rows();
+    if ((sparse_max_col < assign_col + col_location) || (sparse_max_row < assign_row + row_location))
+    {
+        throw std::range_error("write block will exceed sparse size!!!");
+    }
+    for (size_t row = row_location; row < row_location + assign_row; row++)
+    {
+        for (size_t col = col_location; col < col_location + assign_col; col++)
+        {
+            assert((sparse_max_col >= assign_col + col_location) || (sparse_max_row >= assign_row + row_location)); // over sparse size
+            sparse_mat.insert(row, col) = assign_mat(row - row_location, col - col_location);
+        }
+    }
+}
+
+template <typename T>
 void showTypeName(T &&tp)
 {
     int tmp = 0;
@@ -81,9 +102,9 @@ Eigen::VectorXd generateRefTrajectory(const int32_t &step, const int32_t &horizo
     return ret;
 }
 
-template <size_t X_SIZE, size_t U_SIZE>
-void castMPCToQPHessian(const Eigen::DiagonalMatrix<double, X_SIZE> &Q, const Eigen::DiagonalMatrix<double, U_SIZE> &R, const int &mpcWindow,
-                        Eigen::SparseMatrix<double> &hessianMatrix)
+template <size_t X_SIZE, size_t U_SIZE, size_t Z_SIZE, size_t mpcWindow>
+void castMPCToQPHessian(const Eigen::DiagonalMatrix<double, (Z_SIZE * mpcWindow + 1)> &Q, const Eigen::DiagonalMatrix<double, U_SIZE> &R,
+                        Eigen::Matrix<double, Z_SIZE, X_SIZE> &C, Eigen::SparseMatrix<double> &hessianMatrix)
 {
 
     hessianMatrix.resize(X_SIZE * (mpcWindow + 1) + U_SIZE * mpcWindow, X_SIZE * (mpcWindow + 1) + U_SIZE * mpcWindow);
@@ -93,10 +114,13 @@ void castMPCToQPHessian(const Eigen::DiagonalMatrix<double, X_SIZE> &Q, const Ei
     {
         if (i < X_SIZE * (mpcWindow + 1))
         {
-            int posQ = i % X_SIZE;
-            float value = Q.diagonal()[posQ];
-            if (value != 0)
-                hessianMatrix.insert(i, i) = value;
+            if (i % X_SIZE == 0)
+            {
+                int posQ = i / X_SIZE;
+                float value = Q.diagonal()[posQ];
+                Eigen::MatrixXd C_tC = C.transpose() * C * value;
+                sparseBlockAssignation(hessianMatrix, i, i, C_tC);
+            }
         }
         else
         {
@@ -106,6 +130,7 @@ void castMPCToQPHessian(const Eigen::DiagonalMatrix<double, X_SIZE> &Q, const Ei
                 hessianMatrix.insert(i, i) = value;
         }
     }
+    std::cout << hessianMatrix << std::endl;
     sparseDisplay(hessianMatrix);
 }
 
@@ -266,8 +291,8 @@ int main()
     uMin << -1.3;
 
     // allocate the weight matrices
-    // ホライゾン長に渡る、書く予測ステップ毎のZxに対するコスト。ここではZxが1次元なので、mpcWindowの数がQのサイズになる
-    Eigen::DiagonalMatrix<double, Zx * mpcWindow + 1> Q;
+    // ホライゾン長に渡る、書く予測ステップ毎のZxに対するコスト。ここではZxが1次元なので、mpcWindow + 1の数がQのサイズになる。 + 1してるのは状態にx0が入っている為。
+    Eigen::DiagonalMatrix<double, (Zx * mpcWindow + 1)> Q;
     // uに掛けるコスト。こちらはホライゾン長に渡って共通のものを掛ける。サイズ = Mu
     Eigen::DiagonalMatrix<double, Mu> R;
     Q.setIdentity();
@@ -291,9 +316,9 @@ int main()
     zRef = generateRefTrajectory(0, mpcWindow + 1);
 
     // cast the MPC problem as QP problem
-    // castMPCToQPHessian(Q, R, mpcWindow, hessian);
-    std::cout << "previous malloc" << std::endl;
+    castMPCToQPHessian<Nx, Mu, Zx, mpcWindow>(Q, R, C, hessian);
     castMPCToQPGradient<Nx, Mu, Zx, mpcWindow>(Q, zRef, C, gradient);
+    // std::cout << gradient << std::endl;
     // castMPCToQPConstraintMatrix(A, B, mpcWindow, linearMatrix);
     // castMPCToQPConstraintVectors(zMax, zMin, uMax, uMin, x0, mpcWindow, lowerBound, upperBound);
 
