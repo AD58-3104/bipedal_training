@@ -17,6 +17,10 @@
 #include <cxxabi.h>
 
 static constexpr bool enable_sparse_display = false;
+// problem setting
+static constexpr double step_width = 0.3;               // 一歩の大きさ(m)
+static constexpr int_fast64_t cycle_step = 40;          // 何サイクル毎に足踏みするか、 cycle_step * T = 周期(s)
+static constexpr int_fast64_t double_support_step = 10; // 両足支持の時間 double_support_step * T = 周期(s)
 using namespace Eigen;
 
 void sparseDisplay(Eigen::SparseMatrix<double> matrix)
@@ -76,24 +80,24 @@ void showResult()
     gp.sendLine("set terminal wxt size 1280,960");
     gp.sendLine("set xrange [0:3]");
     gp.sendLine("set yrange [-0.5:0.5]");
-    gp.sendLine("plot 'x_data.dat' using 1:2 w lp");
-    gp.sendLine("replot 'x_data.dat' using 1:3 w lp");
-    gp.sendLine("replot 'x_data.dat' using 1:4 w lp");
-    gp.sendLine("replot 'x_data.dat' using 1:5 w lp");
+    gp.sendLine("plot 'x_data.dat' using 1:2 w lp title \" ZMP trajectry \"");
+    gp.sendLine("replot 'x_data.dat' using 1:3 w lp title \" ref trajectry \"");
+    gp.sendLine("replot 'x_data.dat' using 1:4 w lp title \" ref max \" ");
+    gp.sendLine("replot 'x_data.dat' using 1:5 w lp title \" ref min \" ");
 }
 
-Eigen::VectorXd generateRefTrajectory(const int32_t &step, const int32_t &horizon_length, const double &step_width)
+Eigen::VectorXd generateRefTrajectory(const int32_t &step, const int32_t &horizon_length, const double &step_width, const int32_t &step_cycle)
 {
     static constexpr double T = 0.01;              // サンプリング周期 (s)
     static constexpr int_fast64_t start_step = 20; // 10 * T = 0.1秒後に歩き出す
-    static constexpr int_fast64_t cycle_step = 40; // 何サイクル毎に足踏みするか、 cycle_step * T = 周期(s)
+    // static constexpr int_fast64_t cycle_step = 40; // 何サイクル毎に足踏みするか、 cycle_step * T = 周期(s)
     // static constexpr double step_width = 0.3;     // 一歩の大きさ(m)
     Eigen::VectorXd ret = Eigen::VectorXd::Zero(horizon_length);
     for (int32_t i = 0; i < horizon_length; i++)
     {
         if ((step + i) >= start_step)
         {
-            if (((step + i) / cycle_step) % 2 == 0)
+            if (((step + i) / step_cycle) % 2 == 0)
             {
                 ret(i, 0) = step_width;
             }
@@ -217,8 +221,9 @@ void castMPCToQPConstraintMatrix(const Eigen::Matrix<double, X_SIZE, X_SIZE> &dy
 
 template <size_t X_SIZE, size_t U_SIZE, size_t Z_SIZE, size_t mpcWindow>
 void castMPCToQPConstraintVectors(const Eigen::Matrix<double, Z_SIZE, 1> &zMax, const Eigen::Matrix<double, Z_SIZE, 1> &zMin,
+                                  const Eigen::Matrix<double, Z_SIZE, 1> &double_spt_zMax, const Eigen::Matrix<double, Z_SIZE, 1> &double_spt_zMin,
                                   const Eigen::Matrix<double, U_SIZE, 1> &uMax, const Eigen::Matrix<double, U_SIZE, 1> &uMin,
-                                  const Eigen::Matrix<double, X_SIZE, 1> &x0,
+                                  const Eigen::Matrix<double, X_SIZE, 1> &x0, const Eigen::Matrix<double, Z_SIZE * mpcWindow + 1, 1> &zRef,
                                   Eigen::VectorXd &lowerBound, Eigen::VectorXd &upperBound)
 {
     // evaluate the lower and the upper inequality vectors
@@ -226,9 +231,29 @@ void castMPCToQPConstraintVectors(const Eigen::Matrix<double, Z_SIZE, 1> &zMax, 
     Eigen::VectorXd upperInequality = Eigen::MatrixXd::Zero(Z_SIZE * (mpcWindow + 1) + U_SIZE * mpcWindow, 1);
     for (int i = 0; i < mpcWindow + 1; i++)
     {
-        lowerInequality.block(Z_SIZE * i, 0, Z_SIZE, 1) = zMin;
-        upperInequality.block(Z_SIZE * i, 0, Z_SIZE, 1) = zMax;
+        // if (zRef(i * Z_SIZE, 0) < 0)
+        // {
+        //     // zRefが負の場合
+        //     lowerInequality.block(i * Z_SIZE, 0, Z_SIZE, 1) = -zMin + zRef.block(i * Z_SIZE, 0, Z_SIZE, 1);
+        //     upperInequality.block(i * Z_SIZE, 0, Z_SIZE, 1) = -zMax + zRef.block(i * Z_SIZE, 0, Z_SIZE, 1);
+        // }
+        // else
+        if (((i) % cycle_step < (double_support_step / 2)) || ((i) % cycle_step >= cycle_step - (double_support_step / 2)))
+        {
+            lowerInequality.block(i * Z_SIZE, 0, Z_SIZE, 1) = double_spt_zMin;
+            upperInequality.block(i * Z_SIZE, 0, Z_SIZE, 1) = double_spt_zMax;
+        }
+        else // 片足支持の時
+        {
+            // 対象のzRefが正の場合 なお、符号など気にせずそのまま足せば良かった模様
+            lowerInequality.block(i * Z_SIZE, 0, Z_SIZE, 1) = zMin + zRef.block(i, 0, Z_SIZE, 1);
+            upperInequality.block(i * Z_SIZE, 0, Z_SIZE, 1) = zMax + zRef.block(i, 0, Z_SIZE, 1);
+        }
     }
+    // std::cout << "lower\n"
+    //           << lowerInequality << std::endl
+    //           << "--- upper ---\n"
+    //           << upperInequality << std::endl;
     for (int i = 0; i < mpcWindow; i++)
     {
         lowerInequality.block(U_SIZE * i + Z_SIZE * (mpcWindow + 1), 0, U_SIZE, 1) = uMin;
@@ -252,12 +277,37 @@ void castMPCToQPConstraintVectors(const Eigen::Matrix<double, Z_SIZE, 1> &zMax, 
         upperInequality;
 }
 
-template <size_t X_SIZE>
-void updateConstraintVectors(const Eigen::Matrix<double, X_SIZE, 1> &x0,
-                             Eigen::VectorXd &lowerBound, Eigen::VectorXd &upperBound)
+template <size_t X_SIZE, size_t Z_SIZE, size_t mpcWindow>
+void updateConstraintVectors(const Eigen::Matrix<double, X_SIZE, 1> &x0, const Eigen::Matrix<double, Z_SIZE * mpcWindow + 1, 1> &zRef,
+                             const Eigen::Matrix<double, Z_SIZE, 1> &zMax, const Eigen::Matrix<double, Z_SIZE, 1> &zMin,
+                             const Eigen::Matrix<double, Z_SIZE, 1> &double_spt_zMax, const Eigen::Matrix<double, Z_SIZE, 1> &double_spt_zMin,
+                             Eigen::VectorXd &lowerBound, Eigen::VectorXd &upperBound, const int32_t current_step)
 {
     lowerBound.block(0, 0, X_SIZE, 1) = -x0;
     upperBound.block(0, 0, X_SIZE, 1) = -x0;
+    for (size_t i = 0; i < mpcWindow + 1; i++)
+    {
+        // if (zRef(i * Z_SIZE, 0) < 0)
+        // {
+        //     // zRefが負の場合
+        //     lowerBound.block(i + X_SIZE * (1 + mpcWindow), 0, Z_SIZE, 1) = -zMin + zRef.block(i * Z_SIZE, 0, Z_SIZE, 1);
+        //     upperBound.block(i + X_SIZE * (1 + mpcWindow), 0, Z_SIZE, 1) = -zMax + zRef.block(i * Z_SIZE, 0, Z_SIZE, 1);
+        // }
+        // else
+
+        // 両足支持期間
+        if (((current_step + i) % cycle_step < (double_support_step / 2)) || ((current_step + i) % cycle_step >= cycle_step - (double_support_step / 2)))
+        {
+            lowerBound.block(i + X_SIZE * (1 + mpcWindow), 0, Z_SIZE, 1) = double_spt_zMin;
+            upperBound.block(i + X_SIZE * (1 + mpcWindow), 0, Z_SIZE, 1) = double_spt_zMax;
+        }
+        else // 片足支持の時
+        {
+            // 対象のzRefが正の場合 なお、符号など気にせずそのまま足せば良かった模様
+            lowerBound.block(i + X_SIZE * (1 + mpcWindow), 0, Z_SIZE, 1) = zMin + zRef.block(i * Z_SIZE, 0, Z_SIZE, 1);
+            upperBound.block(i + X_SIZE * (1 + mpcWindow), 0, Z_SIZE, 1) = zMax + zRef.block(i * Z_SIZE, 0, Z_SIZE, 1);
+        }
+    }
 }
 
 template <size_t Z_SIZE>
@@ -277,7 +327,8 @@ int main()
     static constexpr double hCoM = 0.6;
     static constexpr double g = 9.81;
     static constexpr double T = 0.01;
-    static constexpr int32_t mpcWindow = 300; // horizon length
+
+    static constexpr int32_t mpcWindow = 5; // horizon length
     // number of iteration steps
     static constexpr int32_t numberOfSteps = 300;
     static constexpr int32_t Mu = 1;
@@ -285,8 +336,8 @@ int main()
     static constexpr int32_t Zx = 1;
     static constexpr int32_t num_of_variables = Nx * (numberOfSteps + 1) + Mu * numberOfSteps;
 
-    static constexpr double Q_scale = 100000;
-    static constexpr double R_scale = 1;
+    static constexpr double Q_scale = 1000000;
+    static constexpr double R_scale = 0.4;
 
     // allocate the dynamics matrices
     Eigen::Matrix<double, Nx, Nx> A;
@@ -301,14 +352,18 @@ int main()
     C << 1.0f, 0, -hCoM / g;
 
     // allocate the constraints vector
-    Eigen::Matrix<double, Zx, 1> zMax;
-    Eigen::Matrix<double, Zx, 1> zMin;
+    Eigen::Matrix<double, Zx, 1> zMax; // 今の所　正
+    Eigen::Matrix<double, Zx, 1> zMin; // 今の所　負
+    Eigen::Matrix<double, Zx, 1> double_spport_zMax;
+    Eigen::Matrix<double, Zx, 1> double_spport_zMin;
     Eigen::Matrix<double, Mu, 1> uMax;
     Eigen::Matrix<double, Mu, 1> uMin;
-    zMax << 0.8;
-    zMin << -0.8;
-    uMax << 1.3;
-    uMin << -1.3;
+    zMax << 0.5;
+    zMin << -0.5;
+    double_spport_zMax << zMax(0, 0) + step_width;
+    double_spport_zMin << zMin(0, 0) - step_width;
+    uMax << 100;
+    uMin << -100;
 
     // allocate the weight matrices
     // ホライゾン長に渡る、書く予測ステップ毎のZxに対するコスト。ここではZxが1次元なので、mpcWindow + 1の数がQのサイズになる。 + 1してるのは状態にx0が入っている為。
@@ -332,8 +387,8 @@ int main()
     Eigen::VectorXd upperBound;
 
     // set the initial and the desired states
-    x0 << 0, 0, 0;
-    zRef = generateRefTrajectory(0, mpcWindow + 1);
+    x0 << 1, 0, 0;
+    zRef = generateRefTrajectory(0, mpcWindow + 1, step_width, cycle_step);
 
     // cast the MPC problem as QP problem
     castMPCToQPHessian<Nx, Mu, Zx, mpcWindow>(Q, R, C, hessian);
@@ -341,14 +396,14 @@ int main()
     // std::cout << gradient << std::endl;
     castMPCToQPConstraintMatrix<Nx, Mu, Zx, mpcWindow>(A, B, C, linearMatrix);
     // std::cout << linearMatrix << std::endl;
-    castMPCToQPConstraintVectors<Nx, Mu, Zx, mpcWindow>(zMax, zMin, uMax, uMin, x0, lowerBound, upperBound);
+    castMPCToQPConstraintVectors<Nx, Mu, Zx, mpcWindow>(zMax, zMin, double_spport_zMax, double_spport_zMin, uMax, uMin, x0, zRef, lowerBound, upperBound);
 
     // // instantiate the solver
     OsqpEigen::Solver solver;
 
     // settings
     // solver.settings()->setVerbosity(false);
-    solver.settings()->setWarmStart(true);
+    solver.settings()->setWarmStart(false);
 
     // set the initial data of the QP solver
     solver.data()->setNumberOfVariables(Nx * (mpcWindow + 1) + Mu * mpcWindow);
@@ -367,7 +422,6 @@ int main()
     // instantiate the solver
     if (!solver.initSolver())
         return 1;
-
     // controller input and QPSolution vector
     Eigen::Matrix<double, Mu, 1> ctr;
     Eigen::VectorXd QPSolution;
@@ -376,9 +430,10 @@ int main()
     ofs.open("x_data.dat");
     auto updateGradient = [&](const size_t &i)
     {
-        zRef = generateRefTrajectory(i, mpcWindow + 1);
+        zRef = generateRefTrajectory(i, mpcWindow + 1, step_width, cycle_step);
         castMPCToQPGradient<Nx, Mu, Zx, mpcWindow>(Q, zRef, C, gradient);
     };
+    
     for (int i = 0; i < numberOfSteps; i++)
     {
 
@@ -386,22 +441,33 @@ int main()
         if (solver.solveProblem() != OsqpEigen::ErrorExitFlag::NoError)
             return 1;
 
+        if (solver.getStatus() != OsqpEigen::Status::Solved)
+        {
+            std::cout << "some problems occured !!!" << std::endl;
+            std::cout << "solver status is ::: " << static_cast<int32_t>(solver.getStatus()) << std::endl;
+            return 1;
+        }
         // get the controller input
         QPSolution = solver.getSolution();
         ctr = QPSolution.block(Nx * (mpcWindow + 1), 0, Mu, 1);
-        // save data into file
-        auto x0Data = x0.data();
 
         // propagate the model
         x0 = A * x0 + B * ctr;
-        ofs << i * T << " " << C * x0 << " " << zRef(0,0) << std::endl;
-        updateGradient(i);
+
+        // save data into file
+        std::cout << x0 << std::endl;
+        ofs << i * T << " " << C * x0 << " " << zRef(0, 0) << " " << upperBound(Nx * (mpcWindow + 1), 0) << " " << lowerBound(Nx * (mpcWindow + 1), 0) << std::endl;
+
+        // update gradient
+        zRef = generateRefTrajectory(i, mpcWindow + 1, step_width, cycle_step);
+        castMPCToQPGradient<Nx, Mu, Zx, mpcWindow>(Q, zRef, C, gradient);
 
         // update the constraint bound
-        updateConstraintVectors<Nx>(x0, lowerBound, upperBound);
+        updateConstraintVectors<Nx, Zx, mpcWindow>(x0, zRef, zMax, zMin, double_spport_zMax, double_spport_zMin, lowerBound, upperBound, i);
+
         if (!solver.updateBounds(lowerBound, upperBound))
             return 1;
-        if (i == numberOfSteps - 1)
+        if (i == numberOfSteps - 1 - 10000)
         {
             std::cout << "----answer----" << std::endl;
             std::cout << QPSolution << std::endl;
