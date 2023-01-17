@@ -16,7 +16,7 @@
 #include "gnuplot.h"
 #include <cxxabi.h>
 
-static constexpr bool enable_sparse_display = true;
+static constexpr bool enable_sparse_display = false;
 using namespace Eigen;
 
 void sparseDisplay(Eigen::SparseMatrix<double> matrix)
@@ -196,7 +196,7 @@ void castMPCToQPConstraintMatrix(const Eigen::Matrix<double, X_SIZE, X_SIZE> &dy
 
     // zの不等式制約のCを代入
     // for (int i = (mpcWindow + 1) * X_SIZE; i < (X_SIZE * (mpcWindow + 1)) + Z_SIZE * (mpcWindow + 1); i++)
-    for (int i = 0; i < Z_SIZE * (mpcWindow + 1);++i)
+    for (int i = 0; i < Z_SIZE * (mpcWindow + 1); ++i)
     {
         sparseBlockAssignation(constraintMatrix, (i * Z_SIZE + (mpcWindow + 1) * X_SIZE), i * X_SIZE, outputMatrix);
         // std::cout << "row " << (i * Z_SIZE + (mpcWindow + 1) * X_SIZE) << "col " << i << std::endl;
@@ -212,42 +212,42 @@ void castMPCToQPConstraintMatrix(const Eigen::Matrix<double, X_SIZE, X_SIZE> &dy
     sparseDisplay(constraintMatrix);
 }
 
-// template <size_t X_SIZE, size_t U_SIZE, size_t Z_SIZE>
-// void castMPCToQPConstraintVectors(const Eigen::Matrix<double, Z_SIZE, 1> &zMax, const Eigen::Matrix<double, Z_SIZE, 1> &zMin,
-//                                   const Eigen::Matrix<double, U_SIZE, 1> &uMax, const Eigen::Matrix<double, U_SIZE, 1> &uMin,
-//                                   const Eigen::Matrix<double, X_SIZE, 1> &x0,
-//                                   const int &mpcWindow, Eigen::VectorXd &lowerBound, Eigen::VectorXd &upperBound)
-// {
-//     // evaluate the lower and the upper inequality vectors
-//     Eigen::VectorXd lowerInequality = Eigen::MatrixXd::Zero(Z_SIZE * (mpcWindow + 1) + U_SIZE * mpcWindow, 1);
-//     Eigen::VectorXd upperInequality = Eigen::MatrixXd::Zero(Z_SIZE * (mpcWindow + 1) + U_SIZE * mpcWindow, 1);
-//     for (int i = 0; i < mpcWindow + 1; i++)
-//     {
-//         lowerInequality.block(Z_SIZE * i, 0, Z_SIZE, 1) = zMin;
-//         upperInequality.block(Z_SIZE * i, 0, Z_SIZE, 1) = zMax;
-//     }
-//     for (int i = 0; i < mpcWindow; i++)
-//     {
-//         lowerInequality.block(U_SIZE * i + Z_SIZE * (mpcWindow + 1), 0, U_SIZE, 1) = uMin;
-//         upperInequality.block(U_SIZE * i + Z_SIZE * (mpcWindow + 1), 0, U_SIZE, 1) = uMax;
-//     }
+template <size_t X_SIZE, size_t U_SIZE, size_t Z_SIZE, size_t mpcWindow>
+void castMPCToQPConstraintVectors(const Eigen::Matrix<double, Z_SIZE, 1> &zMax, const Eigen::Matrix<double, Z_SIZE, 1> &zMin,
+                                  const Eigen::Matrix<double, U_SIZE, 1> &uMax, const Eigen::Matrix<double, U_SIZE, 1> &uMin,
+                                  const Eigen::Matrix<double, X_SIZE, 1> &x0,
+                                  Eigen::VectorXd &lowerBound, Eigen::VectorXd &upperBound)
+{
+    // evaluate the lower and the upper inequality vectors
+    Eigen::VectorXd lowerInequality = Eigen::MatrixXd::Zero(Z_SIZE * (mpcWindow + 1) + U_SIZE * mpcWindow, 1);
+    Eigen::VectorXd upperInequality = Eigen::MatrixXd::Zero(Z_SIZE * (mpcWindow + 1) + U_SIZE * mpcWindow, 1);
+    for (int i = 0; i < mpcWindow + 1; i++)
+    {
+        lowerInequality.block(Z_SIZE * i, 0, Z_SIZE, 1) = zMin;
+        upperInequality.block(Z_SIZE * i, 0, Z_SIZE, 1) = zMax;
+    }
+    for (int i = 0; i < mpcWindow; i++)
+    {
+        lowerInequality.block(U_SIZE * i + Z_SIZE * (mpcWindow + 1), 0, U_SIZE, 1) = uMin;
+        upperInequality.block(U_SIZE * i + Z_SIZE * (mpcWindow + 1), 0, U_SIZE, 1) = uMax;
+    }
 
-//     // evaluate the lower and the upper equality vectors
-//     Eigen::VectorXd lowerEquality = Eigen::MatrixXd::Zero(X_SIZE * (mpcWindow + 1), 1);
-//     Eigen::VectorXd upperEquality;
-//     lowerEquality.block(0, 0, X_SIZE, 1) = -x0;
-//     upperEquality = lowerEquality;
-//     lowerEquality = lowerEquality;
+    // evaluate the lower and the upper equality vectors
+    Eigen::VectorXd lowerEquality = Eigen::MatrixXd::Zero(X_SIZE * (mpcWindow + 1), 1);
+    Eigen::VectorXd upperEquality;
+    lowerEquality.block(0, 0, X_SIZE, 1) = -x0;
+    upperEquality = lowerEquality;
+    lowerEquality = lowerEquality;
 
-//     // merge inequality and equality vectors
-//     lowerBound = Eigen::MatrixXd::Zero(X_SIZE * (mpcWindow + 1) + Z_SIZE * (mpcWindow + 1) + U_SIZE * mpcWindow, 1);
-//     lowerBound << lowerEquality,
-//         lowerInequality;
+    // merge inequality and equality vectors
+    lowerBound = Eigen::MatrixXd::Zero(X_SIZE * (mpcWindow + 1) + Z_SIZE * (mpcWindow + 1) + U_SIZE * mpcWindow, 1);
+    lowerBound << lowerEquality,
+        lowerInequality;
 
-//     upperBound = Eigen::MatrixXd::Zero(X_SIZE * (mpcWindow + 1) + Z_SIZE * (mpcWindow + 1) + U_SIZE * mpcWindow, 1);
-//     upperBound << upperEquality,
-//         upperInequality;
-// }
+    upperBound = Eigen::MatrixXd::Zero(X_SIZE * (mpcWindow + 1) + Z_SIZE * (mpcWindow + 1) + U_SIZE * mpcWindow, 1);
+    upperBound << upperEquality,
+        upperInequality;
+}
 
 // template<size_t X_SIZE>
 // void updateConstraintVectors(const Eigen::Matrix<double, X_SIZE, 1> &x0,
@@ -335,7 +335,7 @@ int main()
     // std::cout << gradient << std::endl;
     castMPCToQPConstraintMatrix<Nx, Mu, Zx, mpcWindow>(A, B, C, linearMatrix);
     // std::cout << linearMatrix << std::endl;
-    castMPCToQPConstraintVectors(zMax, zMin, uMax, uMin, x0, mpcWindow, lowerBound, upperBound);
+    castMPCToQPConstraintVectors<Nx, Mu, Zx, mpcWindow>(zMax, zMin, uMax, uMin, x0, lowerBound, upperBound);
 
     // // instantiate the solver
     // OsqpEigen::Solver solver;
