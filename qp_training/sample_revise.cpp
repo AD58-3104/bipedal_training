@@ -77,6 +77,7 @@ void showResult()
     gp.sendLine("set xrange [0:3]");
     gp.sendLine("set yrange [-0.5:0.5]");
     gp.sendLine("plot 'x_data.dat' using 1:2");
+    gp.sendLine("replot 'x_data.dat' using 1:3 w lp");
 }
 
 Eigen::VectorXd generateRefTrajectory(const int32_t &step, const int32_t &horizon_length)
@@ -131,7 +132,7 @@ void castMPCToQPHessian(const Eigen::DiagonalMatrix<double, (Z_SIZE * mpcWindow 
                 hessianMatrix.insert(i, i) = value;
         }
     }
-    std::cout << hessianMatrix << std::endl;
+    // std::cout << hessianMatrix << std::endl;
     // sparseDisplay(hessianMatrix);
 }
 
@@ -274,13 +275,16 @@ int main()
     static constexpr double hCoM = 0.6;
     static constexpr double g = 9.81;
     static constexpr double T = 0.01;
-    static constexpr int32_t mpcWindow = 10; // horizon length
+    static constexpr int32_t mpcWindow = 300; // horizon length
     // number of iteration steps
     static constexpr int32_t numberOfSteps = 300;
     static constexpr int32_t Mu = 1;
     static constexpr int32_t Nx = 3;
     static constexpr int32_t Zx = 1;
     static constexpr int32_t num_of_variables = Nx * (numberOfSteps + 1) + Mu * numberOfSteps;
+
+    static constexpr double Q_scale = 100000;
+    static constexpr double R_scale = 1;
 
     // allocate the dynamics matrices
     Eigen::Matrix<double, Nx, Nx> A;
@@ -311,8 +315,8 @@ int main()
     Eigen::DiagonalMatrix<double, Mu> R;
     Q.setIdentity();
     R.setIdentity();
-    Q = Q * 1000.0;
-    R = R * 1.0;
+    Q = Q * Q_scale;
+    R = R * R_scale;
 
     // allocate the initial and the reference state space
     Eigen::Matrix<double, Nx, 1> x0;
@@ -368,6 +372,11 @@ int main()
 
     std::ofstream ofs;
     ofs.open("x_data.dat");
+    auto updateGradient = [&](const size_t &i)
+    {
+        zRef = generateRefTrajectory(i, mpcWindow + 1);
+        castMPCToQPGradient<Nx, Mu, Zx, mpcWindow>(Q, zRef, C, gradient);
+    };
     for (int i = 0; i < numberOfSteps; i++)
     {
 
@@ -383,14 +392,21 @@ int main()
 
         // propagate the model
         x0 = A * x0 + B * ctr;
-        ofs << i * T << " " << x0.transpose() << std::endl;
-        zRef = generateRefTrajectory(i, mpcWindow + 1);
-        castMPCToQPGradient<Nx, Mu, Zx, mpcWindow>(Q, zRef, C, gradient);
+        ofs << i * T << " " << C * x0 << " " << zRef(0,0) << std::endl;
+        updateGradient(i);
 
         // update the constraint bound
         updateConstraintVectors<Nx>(x0, lowerBound, upperBound);
         if (!solver.updateBounds(lowerBound, upperBound))
             return 1;
+        if (i == numberOfSteps - 1)
+        {
+            std::cout << "----answer----" << std::endl;
+            std::cout << QPSolution << std::endl;
+            std::cout << "answer cols " << QPSolution.cols() << " rows " << QPSolution.rows() << std::endl;
+            std::cout << " control \n"
+                      << ctr << std::endl;
+        }
     }
     showResult();
     return 0;
