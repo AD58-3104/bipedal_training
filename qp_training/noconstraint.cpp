@@ -76,8 +76,10 @@ void showResult()
     gp.sendLine("set terminal wxt size 1280,960");
     gp.sendLine("set xrange [0:3]");
     gp.sendLine("set yrange [-0.5:0.5]");
-    gp.sendLine("plot 'x_data.dat' using 1:2");
-    gp.sendLine("replot 'x_data.dat' using 1:3 w lp");
+    gp.sendLine("plot 'x_data.dat' using 1:2 w lp title \" ZMP trajectry \"");
+    gp.sendLine("replot 'x_data.dat' using 1:3 w lp title \" ref trajectry \"");
+    gp.sendLine("replot 'x_data.dat' using 1:4 w lp title \" ref max \" ");
+    gp.sendLine("replot 'x_data.dat' using 1:5 w lp title \" ref min \" ");
 }
 
 Eigen::VectorXd generateRefTrajectory(const int32_t &step, const int32_t &horizon_length)
@@ -119,7 +121,7 @@ void castMPCToQPHessian(const Eigen::DiagonalMatrix<double, (Z_SIZE * mpcWindow 
             if (i % X_SIZE == 0)
             {
                 int posQ = i / X_SIZE;
-                float value = Q.diagonal()[posQ];
+                double value = Q.diagonal()[posQ];
                 Eigen::MatrixXd C_tC = C.transpose() * C * value;
                 sparseBlockAssignation(hessianMatrix, i, i, C_tC);
             }
@@ -127,7 +129,7 @@ void castMPCToQPHessian(const Eigen::DiagonalMatrix<double, (Z_SIZE * mpcWindow 
         else
         {
             int posR = i % U_SIZE;
-            float value = R.diagonal()[posR];
+            double value = R.diagonal()[posR];
             if (value != 0)
                 hessianMatrix.insert(i, i) = value;
         }
@@ -151,7 +153,7 @@ void castMPCToQPGradient(const Eigen::DiagonalMatrix<double, Z_SIZE * mpcWindow 
     for (int i = 0; i * X_SIZE < X_SIZE * (mpcWindow + 1); i++)
     {
         int posQ = i;
-        float value = Qz_ref(posQ, 0);
+        double value = Qz_ref(posQ, 0);
         // std::cout << posQ << " ←posQ " << value << std::endl;
         gradient.block(i * X_SIZE, 0, X_SIZE, 1) = value * C.transpose();
         // std::cout << C << std::endl;
@@ -177,7 +179,7 @@ void castMPCToQPConstraintMatrix(const Eigen::Matrix<double, X_SIZE, X_SIZE> &dy
         for (int j = 0; j < X_SIZE; j++)
             for (int k = 0; k < X_SIZE; k++)
             {
-                float value = dynamicMatrix(j, k);
+                double value = dynamicMatrix(j, k);
                 if (value != 0)
                 {
                     constraintMatrix.insert(X_SIZE * (i + 1) + j, X_SIZE * i + k) = value;
@@ -188,7 +190,7 @@ void castMPCToQPConstraintMatrix(const Eigen::Matrix<double, X_SIZE, X_SIZE> &dy
         for (int j = 0; j < X_SIZE; j++)
             for (int k = 0; k < U_SIZE; k++)
             {
-                float value = controlMatrix(j, k);
+                double value = controlMatrix(j, k);
                 if (value != 0)
                 {
                     constraintMatrix.insert(X_SIZE * (i + 1) + j, U_SIZE * i + k + X_SIZE * (mpcWindow + 1)) = value;
@@ -303,10 +305,10 @@ int main()
     Eigen::Matrix<double, Zx, 1> zMin;
     Eigen::Matrix<double, Mu, 1> uMax;
     Eigen::Matrix<double, Mu, 1> uMin;
-    zMax << 0.8;
-    zMin << -0.8;
-    uMax << 1.3;
-    uMin << -1.3;
+    zMax << 0.4;
+    zMin << -0.4;
+    uMax << 300;
+    uMin << -300;
 
     // allocate the weight matrices
     // ホライゾン長に渡る、書く予測ステップ毎のZxに対するコスト。ここではZxが1次元なので、mpcWindow + 1の数がQのサイズになる。 + 1してるのは状態にx0が入っている為。
@@ -384,6 +386,13 @@ int main()
         if (solver.solveProblem() != OsqpEigen::ErrorExitFlag::NoError)
             return 1;
 
+        if (solver.getStatus() != OsqpEigen::Status::Solved)
+        {
+            std::cout << "some error occured !!!\n"
+                      << std::endl;
+            return 1;
+        }
+
         // get the controller input
         QPSolution = solver.getSolution();
         ctr = QPSolution.block(Nx * (mpcWindow + 1), 0, Mu, 1);
@@ -392,7 +401,7 @@ int main()
 
         // propagate the model
         x0 = A * x0 + B * ctr;
-        ofs << i * T << " " << C * x0 << " " << zRef(0,0) << std::endl;
+        ofs << i * T << " " << C * x0 << " " << zRef(0, 0) << " " << upperBound(Nx * (mpcWindow + 1), 0) << " " << lowerBound(Nx * (mpcWindow + 1), 0)<< std::endl;
         updateGradient(i);
 
         // update the constraint bound
