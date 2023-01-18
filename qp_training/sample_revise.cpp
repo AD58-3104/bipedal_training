@@ -19,6 +19,7 @@
 static constexpr bool enable_sparse_display = false;
 // problem setting
 static constexpr double step_width = 0.3;               // 一歩の大きさ(m)
+static constexpr int_fast64_t start_with_this_step = 40;   // 10 * T = 0.1秒後に歩き出す
 static constexpr int_fast64_t cycle_step = 40;          // 何サイクル毎に足踏みするか、 cycle_step * T = 周期(s)
 static constexpr int_fast64_t double_support_step = 10; // 両足支持の時間 double_support_step * T = 周期(s)
 using namespace Eigen;
@@ -89,13 +90,13 @@ void showResult()
 Eigen::VectorXd generateRefTrajectory(const int32_t &step, const int32_t &horizon_length, const double &step_width, const int32_t &step_cycle)
 {
     static constexpr double T = 0.01;              // サンプリング周期 (s)
-    static constexpr int_fast64_t start_step = 20; // 10 * T = 0.1秒後に歩き出す
+    // static constexpr int_fast64_t start_step = 20; // 10 * T = 0.1秒後に歩き出す
     // static constexpr int_fast64_t cycle_step = 40; // 何サイクル毎に足踏みするか、 cycle_step * T = 周期(s)
     // static constexpr double step_width = 0.3;     // 一歩の大きさ(m)
     Eigen::VectorXd ret = Eigen::VectorXd::Zero(horizon_length);
     for (int32_t i = 0; i < horizon_length; i++)
     {
-        if ((step + i) >= start_step)
+        if ((step + i) >= start_with_this_step)
         {
             if (((step + i) / step_cycle) % 2 == 0)
             {
@@ -238,7 +239,7 @@ void castMPCToQPConstraintVectors(const Eigen::Matrix<double, Z_SIZE, 1> &zMax, 
         //     upperInequality.block(i * Z_SIZE, 0, Z_SIZE, 1) = -zMax + zRef.block(i * Z_SIZE, 0, Z_SIZE, 1);
         // }
         // else
-        if (((i) % cycle_step < (double_support_step / 2)) || ((i) % cycle_step >= cycle_step - (double_support_step / 2)))
+        if (((i) % cycle_step < (double_support_step / 2)) || ((i) % cycle_step >= cycle_step - (double_support_step / 2)) || (i <= start_with_this_step + double_support_step / 2))
         {
             lowerInequality.block(i * Z_SIZE, 0, Z_SIZE, 1) = double_spt_zMin;
             upperInequality.block(i * Z_SIZE, 0, Z_SIZE, 1) = double_spt_zMax;
@@ -296,7 +297,7 @@ void updateConstraintVectors(const Eigen::Matrix<double, X_SIZE, 1> &x0, const E
         // else
 
         // 両足支持期間
-        if (((current_step + i) % cycle_step < (double_support_step / 2)) || ((current_step + i) % cycle_step >= cycle_step - (double_support_step / 2)))
+        if (((current_step + i) % cycle_step < (double_support_step / 2)) || ((current_step + i) % cycle_step >= cycle_step - (double_support_step / 2)) || (i + current_step <= start_with_this_step + double_support_step / 2))
         {
             lowerBound.block(i + X_SIZE * (1 + mpcWindow), 0, Z_SIZE, 1) = double_spt_zMin;
             upperBound.block(i + X_SIZE * (1 + mpcWindow), 0, Z_SIZE, 1) = double_spt_zMax;
@@ -337,7 +338,7 @@ int main()
     static constexpr int32_t num_of_variables = Nx * (numberOfSteps + 1) + Mu * numberOfSteps;
 
     static constexpr double Q_scale = 100000;
-    static constexpr double R_scale = 100;
+    static constexpr double R_scale = 1;
 
     // allocate the dynamics matrices
     Eigen::Matrix<double, Nx, Nx> A;
@@ -358,12 +359,12 @@ int main()
     Eigen::Matrix<double, Zx, 1> double_spport_zMin;
     Eigen::Matrix<double, Mu, 1> uMax;
     Eigen::Matrix<double, Mu, 1> uMin;
-    zMax << 0.1;
-    zMin << -0.1;
+    zMax << 0.02;
+    zMin << -0.02;
     double_spport_zMax << zMax(0, 0) + step_width;
     double_spport_zMin << zMin(0, 0) - step_width;
-    uMax << 10000;
-    uMin << -10000;
+    uMax << 100;
+    uMin << -100;
 
     // allocate the weight matrices
     // ホライゾン長に渡る、書く予測ステップ毎のZxに対するコスト。ここではZxが1次元なので、mpcWindow + 1の数がQのサイズになる。 + 1してるのは状態にx0が入っている為。
@@ -387,7 +388,7 @@ int main()
     Eigen::VectorXd upperBound;
 
     // set the initial and the desired states
-    x0 << 0.03, 0, 0;
+    x0 << 0, 0, 0;
     zRef = generateRefTrajectory(0, mpcWindow + 1, step_width, cycle_step);
 
     // cast the MPC problem as QP problem
@@ -458,7 +459,7 @@ int main()
 
         // save data into file
         std::cout << x0 << std::endl;
-        ofs << i * T << " " << C * x0 << " " << zRef(0, 0) << " " << upperBound(Nx * (mpcWindow + 1), 0) << " " << lowerBound(Nx * (mpcWindow + 1), 0) << std::endl;
+        ofs << i * T << " " << C * x0 << " " << zRef(0, 0) << " " << upperBound(Nx * (mpcWindow + 1), 0) << " " << lowerBound(Nx * (mpcWindow + 1), 0) << " " << x0(0,0) <<std::endl;
 
         // update gradient
         zRef = generateRefTrajectory(i, mpcWindow + 1, step_width, cycle_step);
