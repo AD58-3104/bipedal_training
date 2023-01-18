@@ -18,10 +18,10 @@
 
 static constexpr bool enable_sparse_display = false;
 // problem setting
-static constexpr double step_width = 0.3;               // 一歩の大きさ(m)
-static constexpr int_fast64_t start_with_this_step = 40;   // 10 * T = 0.1秒後に歩き出す
-static constexpr int_fast64_t cycle_step = 40;          // 何サイクル毎に足踏みするか、 cycle_step * T = 周期(s)
-static constexpr int_fast64_t double_support_step = 10; // 両足支持の時間 double_support_step * T = 周期(s)
+static constexpr double step_width = 0.3;                // 一歩の大きさ(m)
+static constexpr int_fast64_t start_with_this_step = 40; // 10 * T = 0.1秒後に歩き出す
+static constexpr int_fast64_t cycle_step = 40;           // 何サイクル毎に足踏みするか、 cycle_step * T = 周期(s)
+static constexpr int_fast64_t double_support_step = 10;  // 両足支持の時間 double_support_step * T = 周期(s)
 using namespace Eigen;
 
 void sparseDisplay(Eigen::SparseMatrix<double> matrix)
