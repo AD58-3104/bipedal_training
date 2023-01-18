@@ -77,7 +77,7 @@ void showTypeName(T &&tp)
 void showResult()
 {
     GnuplotPipe gp;
-    gp.sendLine("set terminal wxt size 1280,960");
+    gp.sendLine("set terminal wxt size 640,480");
     gp.sendLine("set xrange [0:3]");
     gp.sendLine("set yrange [-0.5:0.5]");
     gp.sendLine("plot 'x_data.dat' using 1:2 w lp title \" ZMP trajectry \"");
@@ -328,16 +328,16 @@ int main()
     static constexpr double g = 9.81;
     static constexpr double T = 0.01;
 
-    static constexpr int32_t mpcWindow = 5; // horizon length
+    static constexpr int32_t mpcWindow = 150; // horizon length
     // number of iteration steps
-    static constexpr int32_t numberOfSteps = 300;
+    static constexpr int32_t numberOfSteps = 600;
     static constexpr int32_t Mu = 1;
     static constexpr int32_t Nx = 3;
     static constexpr int32_t Zx = 1;
     static constexpr int32_t num_of_variables = Nx * (numberOfSteps + 1) + Mu * numberOfSteps;
 
-    static constexpr double Q_scale = 1000000;
-    static constexpr double R_scale = 0.4;
+    static constexpr double Q_scale = 100000;
+    static constexpr double R_scale = 100;
 
     // allocate the dynamics matrices
     Eigen::Matrix<double, Nx, Nx> A;
@@ -358,12 +358,12 @@ int main()
     Eigen::Matrix<double, Zx, 1> double_spport_zMin;
     Eigen::Matrix<double, Mu, 1> uMax;
     Eigen::Matrix<double, Mu, 1> uMin;
-    zMax << 0.5;
-    zMin << -0.5;
+    zMax << 0.1;
+    zMin << -0.1;
     double_spport_zMax << zMax(0, 0) + step_width;
     double_spport_zMin << zMin(0, 0) - step_width;
-    uMax << 100;
-    uMin << -100;
+    uMax << 10000;
+    uMin << -10000;
 
     // allocate the weight matrices
     // ホライゾン長に渡る、書く予測ステップ毎のZxに対するコスト。ここではZxが1次元なので、mpcWindow + 1の数がQのサイズになる。 + 1してるのは状態にx0が入っている為。
@@ -443,6 +443,7 @@ int main()
 
         if (solver.getStatus() != OsqpEigen::Status::Solved)
         {
+            std::cout << ctr << std::endl;
             std::cout << "======== some problems occured !!!========" << std::endl;
             std::cout << "solver status is ::: " << static_cast<int32_t>(solver.getStatus()) << std::endl;
             std::cout << "this happens on step " << i << std::endl;
@@ -468,7 +469,7 @@ int main()
 
         if (!solver.updateBounds(lowerBound, upperBound))
             return 1;
-        if (i == numberOfSteps - 1 - 10000)
+        if (i == numberOfSteps - 1 )
         {
             std::cout << "----answer----" << std::endl;
             std::cout << QPSolution << std::endl;
