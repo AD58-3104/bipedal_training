@@ -78,13 +78,17 @@ void showTypeName(T &&tp)
 void showResult()
 {
     GnuplotPipe gp;
-    gp.sendLine("set terminal wxt size 640,480");
+    gp.sendLine("set terminal wxt size 1280,980");
     gp.sendLine("set xrange [0:3]");
     gp.sendLine("set yrange [-0.5:0.5]");
+    gp.sendLine("set ylabel 'x(m)' ");
+    gp.sendLine("set xlabel 't(s)' ");
+
     gp.sendLine("plot 'x_data.dat' using 1:2 w lp title \" ZMP trajectry \"");
     gp.sendLine("replot 'x_data.dat' using 1:3 w lp title \" ref trajectry \"");
     gp.sendLine("replot 'x_data.dat' using 1:4 w lp title \" ref max \" ");
     gp.sendLine("replot 'x_data.dat' using 1:5 w lp title \" ref min \" ");
+    gp.sendLine("replot 'x_data.dat' using 1:6 w lp title \" x \" ");
 }
 
 Eigen::VectorXd generateRefTrajectory(const int32_t &step, const int32_t &horizon_length, const double &step_width, const int32_t &step_cycle)
