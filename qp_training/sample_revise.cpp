@@ -443,8 +443,9 @@ int main()
 
         if (solver.getStatus() != OsqpEigen::Status::Solved)
         {
-            std::cout << "some problems occured !!!" << std::endl;
+            std::cout << "======== some problems occured !!!========" << std::endl;
             std::cout << "solver status is ::: " << static_cast<int32_t>(solver.getStatus()) << std::endl;
+            std::cout << "this happens on step " << i << std::endl;
             return 1;
         }
         // get the controller input
