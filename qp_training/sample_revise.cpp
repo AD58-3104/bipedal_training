@@ -387,7 +387,7 @@ int main()
     Eigen::VectorXd upperBound;
 
     // set the initial and the desired states
-    x0 << 1, 0, 0;
+    x0 << 0.03, 0, 0;
     zRef = generateRefTrajectory(0, mpcWindow + 1, step_width, cycle_step);
 
     // cast the MPC problem as QP problem
