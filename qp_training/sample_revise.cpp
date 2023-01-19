@@ -431,8 +431,9 @@ int main()
     Eigen::Matrix<double, Mu, 1> ctr;
     Eigen::VectorXd QPSolution;
 
-    std::ofstream ofs;
+    std::ofstream ofs,x_vel_acc;
     ofs.open("x_data.dat");
+    x_vel_acc.open("vel_acc.dat");
     auto updateGradient = [&](const size_t &i)
     {
         zRef = generateRefTrajectory(i, mpcWindow + 1, step_width, cycle_step);
@@ -464,6 +465,7 @@ int main()
         // save data into file
         std::cout << x0 << std::endl;
         ofs << i * T << " " << C * x0 << " " << zRef(0, 0) << " " << upperBound(Nx * (mpcWindow + 1), 0) << " " << lowerBound(Nx * (mpcWindow + 1), 0) << " " << x0(0, 0) << " " << ctr(0,0) << std::endl;
+        x_vel_acc << i * T << "," << x0(0, 0) << "," << x0(1, 0) << "," << x0(2, 0) << std::endl;
         // update gradient
         zRef = generateRefTrajectory(i, mpcWindow + 1, step_width, cycle_step);
         castMPCToQPGradient<Nx, Mu, Zx, mpcWindow>(Q, zRef, C, gradient);
