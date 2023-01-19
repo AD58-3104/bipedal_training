@@ -18,7 +18,7 @@
 
 static constexpr bool enable_sparse_display = false;
 // problem setting
-static constexpr double step_width = 0.3;                // 一歩の大きさ(m)
+static constexpr double step_width = 0.15;                // 一歩の大きさ(m)
 static constexpr int_fast64_t start_with_this_step = 40; // 10 * T = 0.1秒後に歩き出す
 static constexpr int_fast64_t cycle_step = 40;           // 何サイクル毎に足踏みするか、 cycle_step * T = 周期(s)
 static constexpr int_fast64_t double_support_step = 10;  // 両足支持の時間 double_support_step * T = 周期(s)
@@ -130,7 +130,7 @@ void castMPCToQPHessian(const Eigen::DiagonalMatrix<double, (Z_SIZE * mpcWindow 
             if (i % X_SIZE == 0)
             {
                 int posQ = i / X_SIZE;
-                float value = Q.diagonal()[posQ];
+                float value = Q.diagonal()[posQ] / 2.0f;
                 Eigen::MatrixXd C_tC = C.transpose() * C * value;
                 sparseBlockAssignation(hessianMatrix, i, i, C_tC);
             }
@@ -138,7 +138,7 @@ void castMPCToQPHessian(const Eigen::DiagonalMatrix<double, (Z_SIZE * mpcWindow 
         else
         {
             int posR = i % U_SIZE;
-            float value = R.diagonal()[posR];
+            float value = R.diagonal()[posR] / 2.0f;
             if (value != 0)
                 hessianMatrix.insert(i, i) = value;
         }
