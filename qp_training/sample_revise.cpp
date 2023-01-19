@@ -463,7 +463,7 @@ int main()
 
         // save data into file
         std::cout << x0 << std::endl;
-        ofs << i * T << " " << C * x0 << " " << zRef(0, 0) << " " << upperBound(Nx * (mpcWindow + 1), 0) << " " << lowerBound(Nx * (mpcWindow + 1), 0) << " " << x0(0, 0) << std::endl;
+        ofs << i * T << " " << C * x0 << " " << zRef(0, 0) << " " << upperBound(Nx * (mpcWindow + 1), 0) << " " << lowerBound(Nx * (mpcWindow + 1), 0) << " " << x0(0, 0) << " " << ctr(0,0) << std::endl;
         // update gradient
         zRef = generateRefTrajectory(i, mpcWindow + 1, step_width, cycle_step);
         castMPCToQPGradient<Nx, Mu, Zx, mpcWindow>(Q, zRef, C, gradient);
