@@ -1,8 +1,13 @@
 /**
- * @file MPCExample.cpp
- * @author Giulio Romualdi
+ * @file generate_trajectory.cpp
+ * @author Giulio Romualdi , Satoshi Inoue
  * @copyright Released under the terms of the BSD 3-Clause License
- * @date 2018
+ * @date 2023
+ * 
+ * 
+ * This code is implementation of this paper.
+ *  P. -b. Wieber, "Trajectory Free Linear Model Predictive Control for Stable Walking in the Presence of Strong Perturbations," 
+ *  2006 6th IEEE-RAS International Conference on Humanoid Robots, Genova, Italy, 2006, pp. 137-142, doi: 10.1109/ICHR.2006.321375.
  */
 
 // osqp-eigen
@@ -335,7 +340,7 @@ int main()
 
     static constexpr int32_t mpcWindow = 150; // horizon length
     // number of iteration steps
-    static constexpr int32_t numberOfSteps = 600;
+    static constexpr int32_t numberOfSteps = 300;
     static constexpr int32_t Mu = 1;
     static constexpr int32_t Nx = 3;
     static constexpr int32_t Zx = 1;
@@ -367,8 +372,8 @@ int main()
     zMin << -0.02;
     double_spport_zMax << zMax(0, 0) + step_width;
     double_spport_zMin << zMin(0, 0) - step_width;
-    uMax << 100;
-    uMin << -100;
+    uMax << 30;
+    uMin << -30;
 
     // allocate the weight matrices
     // ホライゾン長に渡る、書く予測ステップ毎のZxに対するコスト。ここではZxが1次元なので、mpcWindow + 1の数がQのサイズになる。 + 1してるのは状態にx0が入っている為。
