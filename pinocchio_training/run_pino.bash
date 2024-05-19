@@ -1,0 +1,1 @@
+sudo docker run -it -v $(pwd):/app -w /app  pinochio:1 
