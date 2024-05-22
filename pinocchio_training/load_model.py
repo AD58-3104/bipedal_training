@@ -35,7 +35,9 @@ for i in range(len(model.names)-1):
     x1, y1, z1 = data.oMi[i].translation.T.flat
     x2, y2, z2 = data.oMi[i+1].translation.T.flat
     ax.plot([x1, x2], [y1, y2], [z1, z2], label=model.names[i])
-
+    # Plot the last point as a larger, red sphere
+    x_last, y_last, z_last = data.oMi[-1].translation.T.flat
+ax.scatter(x_last, y_last, z_last, color='red', s=100)
 # Set axis labels
 ax.set_xlabel('X')
 ax.set_ylabel('Y')
