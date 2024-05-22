@@ -1,1 +1,1 @@
-sudo docker run -it -v $(pwd):/app -w /app  pinochio:1 
+sudo docker run -it -v $(pwd):/app -w /app -v /tmp/.X11-unix:/tmp/.X11-unix -e DISPLAY=unix$DISPLAY  pinochio:1 
