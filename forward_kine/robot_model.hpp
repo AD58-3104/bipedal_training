@@ -285,6 +285,7 @@ struct RobotModel
         model_.push_back(StraightChainRobotModel(id++, 0, Eigen::Vector3d::Zero(), -L01_Y_WAIST_YAW, Eigen::Vector3d::Zero()));
         // 腰付け根ロール
         model_.push_back(StraightChainRobotModel(id++, 0, Eigen::Vector3d(M_PI / 2.0, 0, 0), 0, Eigen::Vector3d::Zero()));
+        model_.back().setReverse(true); //ここ逆にしたらxv_refが楽
         // 腰独立への変換(Imagenary Link)
         model_.push_back(StraightChainRobotModel(id++, 0, Eigen::Vector3d(0, -M_PI / 2.0, 0), 0, Eigen::Vector3d(0, 0, -M_PI / 2.0)));
         model_.back().setImagenary(true);
@@ -304,7 +305,7 @@ struct RobotModel
         // 足首のピッチ回転
         model_.push_back(StraightChainRobotModel(id++, 0, Eigen::Vector3d(0, 0, 0), 0, Eigen::Vector3d(0, 0, 0)));
         model_.back().setParallelWith(id - 3, true);
-        model_.back().setReverse(true);
+        // model_.back().setReverse(true); ここ無くしたら右脚はxv_ref.dの符号変えずに行けた
         // 足首のロール回転
         model_.push_back(StraightChainRobotModel(id++, 0, Eigen::Vector3d(M_PI / 2, 0, 0), 0, Eigen::Vector3d(0, 0, 0)));
         // 足首から足裏まで
@@ -338,6 +339,19 @@ struct RobotModel
             {
                 motor.addenParallelJointAngle(motor.id_parallel_with_, model_[motor.id_parallel_with_].joint_angle_);
             }
+        }
+        return;
+    }
+
+    void printAllJointAnglesDeg()
+    {
+        for (auto &motor : model_)
+        {
+            if (motor.is_imagenary_)
+            {
+                continue;
+            }
+            std::cout << "motor id <" << motor.motor_id_ << "> angle <" << motor.joint_angle_ * 180.0 / M_PI << ">" << std::endl;
         }
         return;
     }
